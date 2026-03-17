@@ -66,6 +66,11 @@ export const matches = pgTable("matches", {
   team2Score: integer("team2_score"),
   roundName: text("round_name"),
   isBye: integer("is_bye").default(0),
+  player1Result: text("player1_result"),
+  player2Result: text("player2_result"),
+  player1SubmittedAt: timestamp("player1_submitted_at"),
+  player2SubmittedAt: timestamp("player2_submitted_at"),
+  matchStatus: text("match_status").default("PENDING"),
 }, (table) => [
   index("idx_matches_tournament_id").on(table.tournamentId),
   index("idx_matches_status").on(table.status),

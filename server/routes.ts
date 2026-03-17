@@ -2073,6 +2073,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: set winner and propagate bracket (reused by organizer endpoint and auto-resolve)
+  async function resolveMatchWinner(matchId: string, winnerId: string): Promise<void> {
+    const match = await storage.getMatch(matchId);
+    if (!match) return;
+    await storage.updateMatch(matchId, { winnerId, status: "completed", matchStatus: "RESOLVED" });
+    const winnerTeam = await storage.getTeam(winnerId);
+    if (winnerTeam) {
+      await storage.updateTeam(winnerId, {
+        wins: (winnerTeam.wins ?? 0) + 1,
+        points: (winnerTeam.points ?? 0) + 3,
+      });
+    }
+    const validTeams = [match.team1Id, match.team2Id].filter(Boolean);
+    const loserId = validTeams.find((id) => id !== winnerId);
+    if (loserId) {
+      const loserTeam = await storage.getTeam(loserId);
+      if (loserTeam) {
+        await storage.updateTeam(loserId, { losses: (loserTeam.losses ?? 0) + 1 });
+      }
+    }
+    const tournament = await storage.getTournament(match.tournamentId);
+    if (tournament && tournament.format === "single_elimination") {
+      if (match.nextMatchId) {
+        const nextMatch = await storage.getMatch(match.nextMatchId);
+        const isFinalSlot = nextMatch?.side === "FINAL";
+        const isFirstSlot = isFinalSlot ? match.side === "LEFT" : (match.matchIndex ?? 0) % 2 === 0;
+        await storage.updateMatch(match.nextMatchId, {
+          [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
+        });
+      } else {
+        const allMatches = await storage.getMatchesByTournament(tournament.id);
+        const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
+          ? match.matchPosition
+          : (() => {
+              const cr = allMatches.filter((m) => m.round === match.round);
+              return cr.findIndex((m) => m.id === match.id);
+            })();
+        if (matchPos !== -1) {
+          const nextRoundPosition = Math.floor(matchPos / 2);
+          const isFirstSlot = matchPos % 2 === 0;
+          const nextRoundMatches = allMatches.filter((m) => m.round === match.round + 1);
+          const nextMatch = nextRoundMatches.find((m) => m.matchPosition === nextRoundPosition) ?? nextRoundMatches[nextRoundPosition];
+          if (nextMatch) {
+            await storage.updateMatch(nextMatch.id, {
+              [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Helper: evaluate both submissions and auto-resolve if possible
+  async function evaluateParticipantResults(matchId: string): Promise<void> {
+    const match = await storage.getMatch(matchId);
+    if (!match || match.matchStatus === "RESOLVED") return;
+    const p1 = match.player1Result;
+    const p2 = match.player2Result;
+    if (p1 === "REVIEW" || p2 === "REVIEW") {
+      await storage.updateMatch(matchId, { matchStatus: "REVIEW_REQUIRED" });
+      return;
+    }
+    if (p1 && p2) {
+      if ((p1 === "WIN" && p2 === "LOSS") || (p1 === "LOSS" && p2 === "WIN")) {
+        const winnerId = p1 === "WIN" ? match.team1Id! : match.team2Id!;
+        await resolveMatchWinner(matchId, winnerId);
+      } else {
+        await storage.updateMatch(matchId, { matchStatus: "REVIEW_REQUIRED" });
+      }
+    }
+  }
+
+  // Get current user's participant slot + current match result state
+  app.get("/api/matches/:matchId/participant-info", async (req, res) => {
+    try {
+      const userId = req.session?.userId;
+      const match = await storage.getMatch(req.params.matchId);
+      if (!match) return res.status(404).json({ error: "Match not found" });
+      const slot = userId ? await storage.getParticipantSlot(userId, req.params.matchId) : null;
+      res.json({
+        slot,
+        player1Result: match.player1Result ?? null,
+        player2Result: match.player2Result ?? null,
+        matchStatus: match.matchStatus ?? "PENDING",
+      });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Participant submits their result
+  app.post("/api/matches/:matchId/participant-result", async (req, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const { result } = req.body;
+      if (!["WIN", "LOSS", "REVIEW"].includes(result)) {
+        return res.status(400).json({ error: "Invalid result. Must be WIN, LOSS, or REVIEW" });
+      }
+      const match = await storage.getMatch(req.params.matchId);
+      if (!match) return res.status(404).json({ error: "Match not found" });
+      if (match.matchStatus === "RESOLVED") {
+        return res.status(400).json({ error: "Match is already resolved" });
+      }
+      const slot = await storage.getParticipantSlot(userId, req.params.matchId);
+      if (!slot) return res.status(403).json({ error: "You are not a participant in this match" });
+      if (slot === 'player1' && match.player1Result) {
+        return res.status(400).json({ error: "You have already submitted a result" });
+      }
+      if (slot === 'player2' && match.player2Result) {
+        return res.status(400).json({ error: "You have already submitted a result" });
+      }
+      const updateData: Partial<typeof match> = {};
+      if (slot === 'player1') {
+        updateData.player1Result = result;
+        updateData.player1SubmittedAt = new Date();
+      } else {
+        updateData.player2Result = result;
+        updateData.player2SubmittedAt = new Date();
+      }
+      if (result === "REVIEW") {
+        updateData.matchStatus = "REVIEW_REQUIRED";
+      }
+      await storage.updateMatch(match.id, updateData);
+      await evaluateParticipantResults(match.id);
+      const finalMatch = await storage.getMatch(match.id);
+      res.json(finalMatch);
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Select winner endpoint (marks match complete and removes loser)
   app.post("/api/matches/:matchId/winner", async (req, res) => {
     try {
@@ -2106,6 +2240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedMatch = await storage.updateMatch(req.params.matchId, {
         winnerId,
         status: "completed",
+        matchStatus: "RESOLVED",
       });
 
       // Update winner stats
@@ -6555,6 +6690,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Background job: auto-resolve matches where one player submitted 5+ minutes ago and other hasn't
+  setInterval(async () => {
+    try {
+      const timedOut = await storage.getTimedOutPendingMatches(5 * 60 * 1000);
+      for (const match of timedOut) {
+        const p1 = match.player1Result;
+        const p2 = match.player2Result;
+        if (p1 && !p2 && match.team1Id && match.team2Id) {
+          const winnerId = p1 === "WIN" ? match.team1Id : match.team2Id;
+          await resolveMatchWinner(match.id, winnerId);
+        } else if (p2 && !p1 && match.team1Id && match.team2Id) {
+          const winnerId = p2 === "WIN" ? match.team2Id : match.team1Id;
+          await resolveMatchWinner(match.id, winnerId);
+        }
+      }
+    } catch (err) {
+      log('ERROR', 'Participant result timeout job failed', { error: String(err) });
+    }
+  }, 60_000);
 
   return httpServer;
 }

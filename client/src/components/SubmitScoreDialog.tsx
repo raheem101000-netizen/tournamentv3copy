@@ -49,6 +49,7 @@ export default function SubmitScoreDialog({
   if (!team1 || !team2) return null;
 
   const [messages, setMessages] = useState<any[]>([]);
+  const [matchInfo, setMatchInfo] = useState<{ player1Result: string | null; player2Result: string | null; matchStatus: string } | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isSelectingWinner, setIsSelectingWinner] = useState(false);
@@ -64,6 +65,10 @@ export default function SubmitScoreDialog({
       .then(r => r.json())
       .then(data => setMessages(Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch messages:", err));
+    fetch(`/api/matches/${matchId}/participant-info`)
+      .then(r => r.json())
+      .then(data => setMatchInfo(data))
+      .catch(err => console.error("Failed to fetch participant info:", err));
   }, [matchId, open]);
 
   useEffect(() => {
@@ -190,6 +195,23 @@ export default function SubmitScoreDialog({
           <DialogTitle className="font-display text-xl" data-testid="text-match-chat-title">
             Match Chat: {getTeamDisplayName(team1)} vs {getTeamDisplayName(team2)}
           </DialogTitle>
+          {matchInfo && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                matchInfo.matchStatus === "RESOLVED" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
+                matchInfo.matchStatus === "REVIEW_REQUIRED" ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" :
+                "bg-muted text-muted-foreground"
+              }`}>
+                {matchInfo.matchStatus}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {getTeamDisplayName(team1)}: <span className="font-semibold text-foreground">{matchInfo.player1Result ?? "—"}</span>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {getTeamDisplayName(team2)}: <span className="font-semibold text-foreground">{matchInfo.player2Result ?? "—"}</span>
+              </span>
+            </div>
+          )}
         </DialogHeader>
 
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">

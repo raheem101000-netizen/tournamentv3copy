@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Send, Trophy, ImageIcon, Loader2, X, Pencil, Trash2, Check } from "lucide-react";
+import { Send, Trophy, ImageIcon, Loader2, X, Pencil, Trash2, Check, AlertCircle } from "lucide-react";
 import { useRef, useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -89,6 +89,13 @@ interface RichMatchChatProps {
   canManage?: boolean;
 }
 
+interface ParticipantInfo {
+  slot: 'player1' | 'player2' | null;
+  player1Result: string | null;
+  player2Result: string | null;
+  matchStatus: string;
+}
+
 export default function RichMatchChat({
   matchId,
   winnerId,
@@ -139,6 +146,30 @@ export default function RichMatchChat({
     enabled: !!matchId,
     refetchInterval: 5000, // Polling for new messages
     staleTime: 1000,
+  });
+
+  const { data: participantInfo, refetch: refetchParticipantInfo } = useQuery<ParticipantInfo>({
+    queryKey: [`/api/matches/${matchId}/participant-info`],
+    enabled: !!matchId,
+    refetchInterval: 5000,
+    staleTime: 1000,
+  });
+
+  const submitResultMutation = useMutation({
+    mutationFn: async (result: 'WIN' | 'LOSS' | 'REVIEW') => {
+      return await apiRequest("POST", `/api/matches/${matchId}/participant-result`, { result });
+    },
+    onSuccess: () => {
+      refetchParticipantInfo();
+      queryClient.invalidateQueries({ queryKey: [`/api/matches/${matchId}`] });
+      if (tournamentId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${tournamentId}/matches`] });
+      }
+      toast({ title: "Result submitted", description: "Your result has been recorded." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to submit result.", variant: "destructive" });
+    },
   });
 
   // Auto-scroll to latest message when messages load or change
@@ -500,16 +531,51 @@ export default function RichMatchChat({
     }
   };
 
+  const isReviewRequired = participantInfo?.matchStatus === "REVIEW_REQUIRED";
+  const mySlot = participantInfo?.slot ?? null;
+  const myResult = mySlot === 'player1' ? participantInfo?.player1Result : participantInfo?.player2Result;
+  const isResolved = participantInfo?.matchStatus === "RESOLVED";
+  const canSubmit = !!mySlot && !myResult && !isResolved;
+
+  const resultLabel = (r: string | null | undefined) => {
+    if (r === "WIN") return "Won";
+    if (r === "LOSS") return "Lost";
+    if (r === "REVIEW") return "Review";
+    return "Pending";
+  };
+  const resultVariant = (r: string | null | undefined): "default" | "destructive" | "outline" | "secondary" => {
+    if (r === "WIN") return "default";
+    if (r === "LOSS") return "destructive";
+    if (r === "REVIEW") return "secondary";
+    return "outline";
+  };
+
   return (
     <div className="flex flex-col h-full gap-4">
-      <Card className="flex flex-col min-h-0 flex-1">
+      <Card className={`flex flex-col min-h-0 flex-1 ${isReviewRequired ? 'border-2 border-red-500' : ''}`}>
         <CardHeader className="pb-3">
           <CardTitle className="font-display flex items-center gap-2 text-sm">
             Match Chat
             <Badge variant="outline" className="font-normal">
               {threadMessages.length} messages
             </Badge>
+            {isReviewRequired && (
+              <Badge variant="destructive" className="flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                Review Required
+              </Badge>
+            )}
+            {isResolved && (
+              <Badge variant="default" className="bg-green-600">Resolved</Badge>
+            )}
           </CardTitle>
+          {/* Organizer: show participant result status */}
+          {canManage && participantInfo && (
+            <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+              <span>{team1Name}: <span className="font-semibold text-foreground">{resultLabel(participantInfo.player1Result)}</span></span>
+              <span>{team2Name}: <span className="font-semibold text-foreground">{resultLabel(participantInfo.player2Result)}</span></span>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="flex-1 flex flex-col gap-3 p-0 px-4 pb-4 pt-4 min-h-0">
           <ScrollArea className="flex-1 pr-4 [&>[data-radix-scroll-area-viewport]]:h-full [&>[data-radix-scroll-area-viewport]>div]:min-h-full [&>[data-radix-scroll-area-viewport]>div]:flex [&>[data-radix-scroll-area-viewport]>div]:flex-col">
@@ -711,6 +777,54 @@ export default function RichMatchChat({
                   {finalTeam2Name}
                 </Button>
               </div>
+            </div>
+          )}
+
+          {/* Participant result buttons — only for match participants, not organizers */}
+          {!canManage && mySlot && !isResolved && (
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">Submit your result:</p>
+              {myResult ? (
+                <div className="flex items-center gap-2">
+                  <Badge variant={resultVariant(myResult)}>
+                    You reported: {resultLabel(myResult)}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">Waiting for opponent…</span>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                    onClick={() => submitResultMutation.mutate("WIN")}
+                    disabled={submitResultMutation.isPending}
+                    data-testid="button-i-won"
+                  >
+                    I Won
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1 text-xs"
+                    onClick={() => submitResultMutation.mutate("LOSS")}
+                    disabled={submitResultMutation.isPending}
+                    data-testid="button-i-lost"
+                  >
+                    I Lost
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs border-orange-500 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950"
+                    onClick={() => submitResultMutation.mutate("REVIEW")}
+                    disabled={submitResultMutation.isPending}
+                    data-testid="button-manual-review"
+                  >
+                    Manual Review
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

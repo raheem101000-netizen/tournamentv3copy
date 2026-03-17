@@ -115,6 +115,8 @@ export interface IStorage {
   getMatch(id: string): Promise<Match | undefined>;
   getMatchesByTournament(tournamentId: string): Promise<Match[]>;
   updateMatch(id: string, data: Partial<Match>): Promise<Match | undefined>;
+  getParticipantSlot(userId: string, matchId: string): Promise<'player1' | 'player2' | null>;
+  getTimedOutPendingMatches(timeoutMs: number): Promise<Match[]>;
 
   // Chat operations
   createChatMessage(data: InsertChatMessage): Promise<ChatMessage>;
@@ -406,6 +408,40 @@ export class DatabaseStorage implements IStorage {
   async deleteMatch(id: string): Promise<boolean> {
     await db.delete(matches).where(eq(matches.id, id));
     return true;
+  }
+
+  async getParticipantSlot(userId: string, matchId: string): Promise<'player1' | 'player2' | null> {
+    const match = await this.getMatch(matchId);
+    if (!match) return null;
+    const checkTeam = async (teamId: string | null | undefined): Promise<boolean> => {
+      if (!teamId) return false;
+      const members = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId));
+      return members.some(m => m.userId === userId);
+    };
+    if (await checkTeam(match.team1Id)) return 'player1';
+    if (await checkTeam(match.team2Id)) return 'player2';
+    return null;
+  }
+
+  async getTimedOutPendingMatches(timeoutMs: number): Promise<Match[]> {
+    const cutoff = new Date(Date.now() - timeoutMs);
+    return await db.select().from(matches).where(
+      and(
+        eq(matches.matchStatus, "PENDING"),
+        or(
+          and(
+            isNotNull(matches.player1Result),
+            isNull(matches.player2Result),
+            lt(matches.player1SubmittedAt, cutoff)
+          ),
+          and(
+            isNull(matches.player1Result),
+            isNotNull(matches.player2Result),
+            lt(matches.player2SubmittedAt, cutoff)
+          )
+        )
+      )
+    );
   }
 
   // Chat operations
