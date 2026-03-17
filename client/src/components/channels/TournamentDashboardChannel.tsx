@@ -944,7 +944,9 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                             handleMatchClick(match.id);
                             setShowMatchChat(true);
                           }}
-                          className={`p-4 rounded-lg border transition-all text-left w-full ${selectedMatchId === match.id
+                          className={`p-4 rounded-lg border transition-all text-left w-full ${(match as any).matchStatus === 'REVIEW_REQUIRED'
+                            ? 'bg-red-50 dark:bg-red-950/30 border-2 border-red-500 hover-elevate'
+                            : selectedMatchId === match.id
                             ? 'bg-accent text-accent-foreground border-accent'
                             : 'bg-card border-border hover:border-primary/50 hover-elevate'
                             }`}
@@ -966,6 +968,9 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                             </div>
                           </div>
                           <div className="text-xs text-muted-foreground text-center mt-3 pt-2 border-t">{match.roundName || `Round ${match.round}`}</div>
+                          {(match as any).matchStatus === 'REVIEW_REQUIRED' && (
+                            <div className="text-xs font-semibold text-red-600 dark:text-red-400 text-center mt-1">⚠ Review Required</div>
+                          )}
                           <div className="text-xs text-center mt-1">
                             {match.winnerId ? (
                               <div className="font-semibold text-green-600 dark:text-green-400 flex items-center justify-center gap-1">
