@@ -111,7 +111,7 @@ export interface IStorage {
   updateTeam(id: string, data: Partial<Team>): Promise<Team | undefined>;
 
   // Match operations
-  createMatch(data: InsertMatch): Promise<Match>;
+  createMatch(data: InsertMatch & { id?: string }): Promise<Match>;
   getMatch(id: string): Promise<Match | undefined>;
   getMatchesByTournament(tournamentId: string): Promise<Match[]>;
   updateMatch(id: string, data: Partial<Match>): Promise<Match | undefined>;
@@ -378,8 +378,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Match operations
-  async createMatch(data: InsertMatch): Promise<Match> {
-    const [match] = await db.insert(matches).values(data).returning();
+  async createMatch(data: InsertMatch & { id?: string }): Promise<Match> {
+    const [match] = await db.insert(matches).values(data as any).returning();
     return match;
   }
 
