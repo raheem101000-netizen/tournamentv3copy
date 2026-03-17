@@ -1,0 +1,84 @@
+import express, { type Request, Response, NextFunction } from "express";
+import { registerRoutes } from "./routes.js";
+import { setupVite, serveStatic, log } from "./vite.js";
+import { createApp } from "./app.js";
+import { skyviewResponseTracker, skyviewErrorHandler, initGlobalErrorTracking } from "./lib/skyview.js";
+
+// Create the app using the shared factory function
+const app = createApp();
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// SkyView: Track all 4xx/5xx responses automatically
+app.use(skyviewResponseTracker);
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+
+      if (logLine.length > 80) {
+        logLine = logLine.slice(0, 79) + "…";
+      }
+
+      log(logLine);
+    }
+  });
+
+  next();
+});
+
+(async () => {
+  try {
+    log(`Starting server in ${process.env.NODE_ENV || 'development'} mode`);
+    log(`Database URL configured: ${process.env.DATABASE_URL ? 'yes' : 'no'}`);
+    log(`Session secret configured: ${process.env.SESSION_SECRET ? 'yes' : 'no'}`);
+
+    // Register API routes
+    const server = await registerRoutes(app);
+    log('Routes registered successfully');
+
+    // SkyView: Global error handler (must be after routes)
+    app.use(skyviewErrorHandler);
+
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      console.error('Request error:', err);
+      res.status(status).json({ message });
+    });
+
+    // Setup Vite or static serving based on environment
+    if (app.get("env") === "development") {
+      await setupVite(app, server);
+    } else {
+      serveStatic(app);
+    }
+
+    const port = parseInt(process.env.PORT || '5000', 10);
+    server.listen({
+      port,
+      host: "0.0.0.0",
+    }, () => {
+      log(`serving on port ${port}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+})();
