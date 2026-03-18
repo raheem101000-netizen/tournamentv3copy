@@ -2638,6 +2638,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 newCount: matchNumber,
                 existingId: entry?.id,
               });
+              // Mark both players as busy so no further matches are created for them this run
+              busyTeamIds.add(pA.id);
+              busyTeamIds.add(pB.id);
             }
           }
         }
