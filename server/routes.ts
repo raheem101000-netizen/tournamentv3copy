@@ -2612,7 +2612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 winnerId: null,
                 team1Score: null,
                 team2Score: null,
-                roundName: `${matchNumber} of 2`,
+                roundName: `Match ${matchNumber} of 2`,
                 isBye: 0,
               });
               leaguePairsToUpdate.push({

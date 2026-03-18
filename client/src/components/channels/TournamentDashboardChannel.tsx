@@ -630,7 +630,9 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full h-auto inline-flex flex-row flex-nowrap overflow-x-auto bg-transparent px-4 py-2 gap-2 hide-scrollbar">
             <TabsTrigger value="overview" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Overview</TabsTrigger>
-            <TabsTrigger value="bracket" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Bracket</TabsTrigger>
+            {selectedTournament.format !== 'league' && (
+              <TabsTrigger value="bracket" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Bracket</TabsTrigger>
+            )}
             <TabsTrigger value="standings" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Standings</TabsTrigger>
             {canAccessMatchChat && (
               <TabsTrigger value="match-chat" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Match Chat</TabsTrigger>
@@ -713,6 +715,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             )}
           </TabsContent>
 
+          {selectedTournament.format !== 'league' && (
           <TabsContent value="bracket" className="w-full px-4 sm:px-6 py-4">
             {selectedTournamentMatches.length > 0 ? (
               <BracketView
@@ -766,6 +769,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
               </Card>
             )}
           </TabsContent>
+          )}
 
 
           <TabsContent value="match-chat" className="space-y-4 w-full px-4 sm:px-6 pb-4">
