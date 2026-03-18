@@ -466,9 +466,13 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
         roundName: roundName.trim() || undefined
       });
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/matches`] });
-      toast({ title: "Matches Generated", description: "Tournament matches have been created successfully!" });
+      if (result?.matchCount === 0) {
+        toast({ title: "All Matches Completed", description: "Every player pair has played their maximum of 2 matches." });
+      } else {
+        toast({ title: "Matches Generated", description: "Tournament matches have been created successfully!" });
+      }
       setRoundName("");
     },
     onError: (error: Error) => {
@@ -802,7 +806,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                             </div>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            Round {selectedMatch.round} • Status: {selectedMatch.status}
+                            {selectedMatch.roundName || `Round ${selectedMatch.round}`} • Status: {selectedMatch.status}
                             {selectedMatch.winnerId && (
                               <span className="inline-flex items-center gap-1 ml-1">
                                 • Winner:

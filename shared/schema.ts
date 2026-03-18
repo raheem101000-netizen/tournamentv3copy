@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -9,7 +9,7 @@ export const tournaments = pgTable("tournaments", {
   serverId: varchar("server_id"),
   name: text("name").notNull(),
   game: text("game"),
-  format: text("format", { enum: ["round_robin", "single_elimination", "swiss"] }).notNull(),
+  format: text("format", { enum: ["round_robin", "single_elimination", "swiss", "league"] }).notNull(),
   status: text("status", { enum: ["upcoming", "in_progress", "completed"] }).notNull().default("upcoming"),
   totalTeams: integer("total_teams").notNull(),
   currentRound: integer("current_round").default(1),
@@ -145,6 +145,23 @@ export const registrationResponses = pgTable("registration_responses", {
   fieldId: varchar("field_id").notNull(),
   responseValue: text("response_value").notNull(),
 });
+
+// League pair tracker - records how many matches have been created between each pair
+// of players in a league/round-robin tournament. Max 2 matches per pair.
+export const leaguePairTracker = pgTable("league_pair_tracker", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tournamentId: varchar("tournament_id").notNull(),
+  playerAId: varchar("player_a_id").notNull(), // canonical: smaller team ID
+  playerBId: varchar("player_b_id").notNull(), // canonical: larger team ID
+  matchesPlayed: integer("matches_played").notNull().default(0),
+}, (table) => [
+  index("idx_league_pair_tracker_tournament_id").on(table.tournamentId),
+  unique("uq_league_pair").on(table.tournamentId, table.playerAId, table.playerBId),
+]);
+
+export const insertLeaguePairTrackerSchema = createInsertSchema(leaguePairTracker).omit({ id: true });
+export type InsertLeaguePairTracker = z.infer<typeof insertLeaguePairTrackerSchema>;
+export type LeaguePairTracker = typeof leaguePairTracker.$inferSelect;
 
 export const insertTournamentSchema = createInsertSchema(tournaments)
   .omit({

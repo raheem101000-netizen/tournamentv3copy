@@ -15,7 +15,7 @@ import { randomBytes } from "crypto";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { storage } from "./storage.js";
-import { pool } from "./db.js";
+import { pool, db } from "./db.js";
 import { SESSION_SECRET } from "./app.js";
 import { sendVerificationEmail, sendPasswordResetEmail } from "./email.js";
 import { cache, CACHE_KEYS, CACHE_TTL } from "./cache.js";
@@ -85,6 +85,7 @@ import {
   insertTeamProfileSchema,
   insertTeamMemberSchema,
   insertServerMemberSchema,
+  leaguePairTracker,
 } from "../shared/schema.js";
 import { z } from "zod";
 import {
@@ -2548,12 +2549,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate matches using bracket-generator (handles all formats with matchPosition,
       // byes, placeholder future rounds, and proper round-robin scheduling)
       let generatedMatches;
+      // For league format: tracks which pairs need their tracker updated after match creation
+      let leaguePairsToUpdate: Array<{ playerAId: string; playerBId: string; newCount: number; existingId?: string }> = [];
+
       if (tournament.format === 'single_elimination') {
         ({ matches: generatedMatches } = generateSingleEliminationBracket(tournament.id, activeTeams));
       } else if (tournament.format === 'round_robin') {
         ({ matches: generatedMatches } = generateRoundRobinBracket(tournament.id, activeTeams));
       } else if (tournament.format === 'swiss') {
         ({ matches: generatedMatches } = generateSwissSystemRound(tournament.id, activeTeams, 1, []));
+      } else if (tournament.format === 'league') {
+        // --- League match generation (gradual, max 2 matches per pair) ---
+        const { eq } = await import("drizzle-orm");
+
+        // Load existing pair tracker records for this tournament
+        const existingPairs = await db.select().from(leaguePairTracker)
+          .where(eq(leaguePairTracker.tournamentId, tournament.id));
+
+        // Build lookup: "playerAId_playerBId" → { id, matchesPlayed }
+        const pairMap = new Map<string, { id: string; matchesPlayed: number }>();
+        for (const pair of existingPairs) {
+          pairMap.set(`${pair.playerAId}_${pair.playerBId}`, { id: pair.id, matchesPlayed: pair.matchesPlayed });
+        }
+
+        // Check if all pairs have reached the 2-match limit
+        const totalPossiblePairs = (activeTeams.length * (activeTeams.length - 1)) / 2;
+        const completedPairs = [...pairMap.values()].filter(p => p.matchesPlayed >= 2).length;
+        if (totalPossiblePairs > 0 && completedPairs >= totalPossiblePairs) {
+          return res.status(200).json({
+            message: "All matches completed",
+            matchCount: 0,
+            matches: []
+          });
+        }
+
+        // Generate one new match for each pair that has played fewer than 2 times
+        generatedMatches = [];
+        for (let i = 0; i < activeTeams.length; i++) {
+          for (let j = i + 1; j < activeTeams.length; j++) {
+            const teamA = activeTeams[i];
+            const teamB = activeTeams[j];
+
+            // Canonical ordering: smaller ID first ensures consistent map keys
+            const [pA, pB] = teamA.id < teamB.id ? [teamA, teamB] : [teamB, teamA];
+            const key = `${pA.id}_${pB.id}`;
+            const entry = pairMap.get(key);
+            const played = entry?.matchesPlayed ?? 0;
+
+            if (played < 2) {
+              const matchNumber = played + 1; // 1 or 2
+              generatedMatches.push({
+                id: randomUUID(),
+                tournamentId: tournament.id,
+                team1Id: pA.id,
+                team2Id: pB.id,
+                round: matchNumber,
+                matchIndex: matchNumber as any,
+                matchPosition: matchNumber as any,
+                side: null as any,
+                nextMatchId: null,
+                status: "pending" as const,
+                winnerId: null,
+                team1Score: null,
+                team2Score: null,
+                roundName: `${matchNumber} of 2`,
+                isBye: 0,
+              });
+              leaguePairsToUpdate.push({
+                playerAId: pA.id,
+                playerBId: pB.id,
+                newCount: matchNumber,
+                existingId: entry?.id,
+              });
+            }
+          }
+        }
       } else {
         return res.status(400).json({ error: "Unknown tournament format" });
       }
@@ -2563,8 +2633,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const roundName = req.body.roundName;
 
       for (const matchData of generatedMatches) {
-        const match = await storage.createMatch(roundName ? { ...matchData, roundName } : matchData);
+        // For league format, roundName is already set per-match ("1 of 2" / "2 of 2");
+        // for other formats, apply the optional roundName from the request body.
+        const matchToCreate = (tournament.format === 'league')
+          ? matchData
+          : (roundName ? { ...matchData, roundName } : matchData);
+        const match = await storage.createMatch(matchToCreate);
         createdMatches.push(match);
+      }
+
+      // Update league pair tracker after matches are stored
+      if (tournament.format === 'league' && leaguePairsToUpdate.length > 0) {
+        const { eq } = await import("drizzle-orm");
+        for (const pair of leaguePairsToUpdate) {
+          if (pair.existingId) {
+            await db.update(leaguePairTracker)
+              .set({ matchesPlayed: pair.newCount })
+              .where(eq(leaguePairTracker.id, pair.existingId));
+          } else {
+            await db.insert(leaguePairTracker).values({
+              tournamentId: tournament.id,
+              playerAId: pair.playerAId,
+              playerBId: pair.playerBId,
+              matchesPlayed: pair.newCount,
+            });
+          }
+        }
       }
 
       // Create match threads for all created matches
