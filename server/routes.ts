@@ -2582,7 +2582,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Generate one new match for each pair that has played fewer than 2 times
+        // Build a set of team IDs that are currently in an unresolved match.
+        // A player is "busy" if they have a match with no winner and status != RESOLVED.
+        // We must not create a new match for any busy player.
+        const existingMatches = await storage.getMatchesByTournament(tournament.id);
+        const busyTeamIds = new Set<string>();
+        for (const m of existingMatches) {
+          const isUnresolved = !m.winnerId && m.matchStatus !== 'RESOLVED';
+          if (isUnresolved) {
+            if (m.team1Id) busyTeamIds.add(m.team1Id);
+            if (m.team2Id) busyTeamIds.add(m.team2Id);
+          }
+        }
+
+        // Generate one new match for each eligible pair:
+        // - pair has played fewer than 2 times, AND
+        // - neither player currently has an unresolved match
         generatedMatches = [];
         for (let i = 0; i < activeTeams.length; i++) {
           for (let j = i + 1; j < activeTeams.length; j++) {
@@ -2594,6 +2609,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const key = `${pA.id}_${pB.id}`;
             const entry = pairMap.get(key);
             const played = entry?.matchesPlayed ?? 0;
+
+            // Skip if either player is already in an active unresolved match
+            if (busyTeamIds.has(pA.id) || busyTeamIds.has(pB.id)) continue;
 
             if (played < 2) {
               const matchNumber = played + 1; // 1 or 2
