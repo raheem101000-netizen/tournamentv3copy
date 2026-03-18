@@ -523,26 +523,49 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   const isOrganizer = !!user?.isAdmin || user?.role === 'admin' ||
     user?.id === selectedTournament?.organizerId || isServerOwner;
 
-  // For league/round_robin: participants see only their one active match at a time.
-  // "Active match" = the earliest (by round) unresolved match involving their team.
-  // Once that match is resolved, the next one becomes visible. Organizers see all.
+  // For league/round_robin: participants see only their oldest unresolved match.
+  // Organizers always see all matches. Applies only when selectedTournament is loaded.
   const visibleMatchChatList = (() => {
-    const isLeague = selectedTournament?.format === 'league' || selectedTournament?.format === 'round_robin';
-    if (!isLeague || isOrganizer) return selectedTournamentMatches;
+    if (!selectedTournament || isOrganizer) return selectedTournamentMatches;
 
-    // Find the team this participant belongs to
-    const userTeam = selectedTournamentTeams.find((team: any) =>
-      team.members?.some((m: any) => m.userId === user?.id)
+    const fmt = selectedTournament.format;
+    const isLeague = fmt === 'league' || fmt === 'round_robin';
+    if (!isLeague) return selectedTournamentMatches;
+
+    // Step 1: find the user's team ID.
+    // Primary: match via registrations (direct userId — most reliable).
+    let userTeamId: string | undefined;
+
+    const userApprovedReg = registrations.find(
+      (r: any) => r.userId === user?.id && r.status === 'approved'
     );
-    if (!userTeam) return [];
+    if (userApprovedReg) {
+      // Find the team in this tournament whose name matches the registration
+      const regTeam = selectedTournamentTeams.find(
+        (t: any) => t.name === userApprovedReg.teamName
+      );
+      userTeamId = regTeam?.id;
+    }
 
-    // All matches for this participant, sorted by round ascending
+    // Fallback: check team.members (populated by the enriched teams endpoint)
+    if (!userTeamId) {
+      const memberTeam = selectedTournamentTeams.find((t: any) =>
+        t.members?.some((m: any) => m.userId === user?.id)
+      );
+      userTeamId = memberTeam?.id;
+    }
+
+    if (!userTeamId) return [];
+
+    // Step 2: get all matches for this user's team, sorted oldest-first by round.
     const myMatches = selectedTournamentMatches
-      .filter(m => m.team1Id === userTeam.id || m.team2Id === userTeam.id)
+      .filter(m => m.team1Id === userTeamId || m.team2Id === userTeamId)
       .sort((a, b) => (a.round ?? 0) - (b.round ?? 0));
 
-    // Find the first match that is not yet resolved
-    const activeMatch = myMatches.find(m => !m.winnerId && (m as any).matchStatus !== 'RESOLVED');
+    // Step 3: surface only the oldest unresolved match.
+    const activeMatch = myMatches.find(
+      m => !m.winnerId && (m as any).matchStatus !== 'RESOLVED'
+    );
 
     return activeMatch ? [activeMatch] : [];
   })();
