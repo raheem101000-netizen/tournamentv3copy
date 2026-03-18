@@ -630,7 +630,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full h-auto inline-flex flex-row flex-nowrap overflow-x-auto bg-transparent px-4 py-2 gap-2 hide-scrollbar">
             <TabsTrigger value="overview" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Overview</TabsTrigger>
-            {selectedTournament.format !== 'league' && (
+            {selectedTournament.format !== 'league' && selectedTournament.format !== 'round_robin' && (
               <TabsTrigger value="bracket" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Bracket</TabsTrigger>
             )}
             <TabsTrigger value="standings" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Standings</TabsTrigger>
@@ -715,7 +715,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             )}
           </TabsContent>
 
-          {selectedTournament.format !== 'league' && (
+          {selectedTournament.format !== 'league' && selectedTournament.format !== 'round_robin' && (
           <TabsContent value="bracket" className="w-full px-4 sm:px-6 py-4">
             {selectedTournamentMatches.length > 0 ? (
               <BracketView

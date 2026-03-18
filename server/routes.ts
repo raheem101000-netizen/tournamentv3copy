@@ -2554,12 +2554,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (tournament.format === 'single_elimination') {
         ({ matches: generatedMatches } = generateSingleEliminationBracket(tournament.id, activeTeams));
-      } else if (tournament.format === 'round_robin') {
-        ({ matches: generatedMatches } = generateRoundRobinBracket(tournament.id, activeTeams));
       } else if (tournament.format === 'swiss') {
         ({ matches: generatedMatches } = generateSwissSystemRound(tournament.id, activeTeams, 1, []));
-      } else if (tournament.format === 'league') {
+      } else if (tournament.format === 'league' || tournament.format === 'round_robin') {
         // --- League match generation (gradual, max 2 matches per pair) ---
+        // Applies to both 'league' and 'round_robin' formats.
         const { eq } = await import("drizzle-orm");
 
         // Load existing pair tracker records for this tournament
@@ -2633,9 +2632,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const roundName = req.body.roundName;
 
       for (const matchData of generatedMatches) {
-        // For league format, roundName is already set per-match ("1 of 2" / "2 of 2");
+        // For league/round_robin, roundName is already set per-match ("Match 1 of 2" / "Match 2 of 2");
         // for other formats, apply the optional roundName from the request body.
-        const matchToCreate = (tournament.format === 'league')
+        const isLeagueFormat = tournament.format === 'league' || tournament.format === 'round_robin';
+        const matchToCreate = isLeagueFormat
           ? matchData
           : (roundName ? { ...matchData, roundName } : matchData);
         const match = await storage.createMatch(matchToCreate);
@@ -2643,7 +2643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Update league pair tracker after matches are stored
-      if (tournament.format === 'league' && leaguePairsToUpdate.length > 0) {
+      if ((tournament.format === 'league' || tournament.format === 'round_robin') && leaguePairsToUpdate.length > 0) {
         const { eq } = await import("drizzle-orm");
         for (const pair of leaguePairsToUpdate) {
           if (pair.existingId) {
