@@ -519,6 +519,34 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   const canAccessMatchChat = !!user?.isAdmin || user?.role === 'admin' ||
     user?.id === selectedTournament?.organizerId || isServerOwner || isMatchParticipant;
 
+  // Whether the current user is an organizer/admin (sees all matches)
+  const isOrganizer = !!user?.isAdmin || user?.role === 'admin' ||
+    user?.id === selectedTournament?.organizerId || isServerOwner;
+
+  // For league/round_robin: participants see only their one active match at a time.
+  // "Active match" = the earliest (by round) unresolved match involving their team.
+  // Once that match is resolved, the next one becomes visible. Organizers see all.
+  const visibleMatchChatList = (() => {
+    const isLeague = selectedTournament?.format === 'league' || selectedTournament?.format === 'round_robin';
+    if (!isLeague || isOrganizer) return selectedTournamentMatches;
+
+    // Find the team this participant belongs to
+    const userTeam = selectedTournamentTeams.find((team: any) =>
+      team.members?.some((m: any) => m.userId === user?.id)
+    );
+    if (!userTeam) return [];
+
+    // All matches for this participant, sorted by round ascending
+    const myMatches = selectedTournamentMatches
+      .filter(m => m.team1Id === userTeam.id || m.team2Id === userTeam.id)
+      .sort((a, b) => (a.round ?? 0) - (b.round ?? 0));
+
+    // Find the first match that is not yet resolved
+    const activeMatch = myMatches.find(m => !m.winnerId && (m as any).matchStatus !== 'RESOLVED');
+
+    return activeMatch ? [activeMatch] : [];
+  })();
+
   const handleBackToList = () => {
     setSelectedTournamentId(null);
     setActiveTab("overview");
@@ -941,7 +969,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">Click a fixture to view chat</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {selectedTournamentMatches.map((match) => {
+                    {visibleMatchChatList.map((match) => {
                       const user1 = getUserInfoByTeamId(match.team1Id);
                       const user2 = getUserInfoByTeamId(match.team2Id);
                       const winnerInfo = getUserInfoByTeamId(match.winnerId);
