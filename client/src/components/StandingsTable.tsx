@@ -10,7 +10,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Trophy, Medal } from "lucide-react";
-import type { Team, Match } from "@shared/schema";
+import type { Team } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -30,7 +30,6 @@ interface StandingsTableProps {
   teams: TeamWithMembers[];
   isEditable?: boolean;
   tournamentId?: string;
-  matches?: Match[];
 }
 
 interface EditableCellProps {
@@ -136,18 +135,13 @@ function EditableCell({ value, teamId, field, isEditable, tournamentId }: Editab
   );
 }
 
-export default function StandingsTable({ teams, isEditable = false, tournamentId, matches = [] }: StandingsTableProps) {
+export default function StandingsTable({ teams, isEditable = false, tournamentId }: StandingsTableProps) {
   const sortedTeams = [...teams].sort((a, b) => {
     if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
     if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
-    return (a.losses || 0) - (b.losses || 0);
+    if ((a.losses || 0) !== (b.losses || 0)) return (a.losses || 0) - (b.losses || 0);
+    return a.id < b.id ? -1 : 1; // stable tiebreaker by team ID
   });
-
-  const getMatchesPlayed = (teamId: string): number =>
-    matches.filter(
-      m => (m.team1Id === teamId || m.team2Id === teamId) &&
-           (m.winnerId != null || (m as any).matchStatus === 'RESOLVED')
-    ).length;
 
   // Get display name from team members (first member's username with @ prefix)
   const getTeamDisplayName = (team: TeamWithMembers): string => {
@@ -219,7 +213,7 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
                   </div>
                 </TableCell>
                 <TableCell className="text-center font-semibold">
-                  {getMatchesPlayed(team.id)}
+                  {(team.wins || 0) + (team.losses || 0)}
                 </TableCell>
                 <TableCell className="text-center font-semibold text-chart-2">
                   <EditableCell
@@ -283,7 +277,7 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
                 <div className="flex items-center gap-3 text-sm mt-1">
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">MP:</span>
-                    <span className="font-semibold">{getMatchesPlayed(team.id)}</span>
+                    <span className="font-semibold">{(team.wins || 0) + (team.losses || 0)}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">W:</span>
