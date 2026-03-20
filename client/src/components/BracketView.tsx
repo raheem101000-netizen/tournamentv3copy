@@ -82,28 +82,23 @@ function MatchBox({
         isCompleted ? "border-border bg-card" : "border-border/70 bg-card/80"
       }`}
     >
-      {/* Team 1 */}
-      <div className={`flex items-center justify-between gap-2 py-0.5 ${isWinner(match.team1Id) ? "font-bold text-primary" : ""}`}>
-        <div className="flex items-center gap-1.5 min-w-0">
+      {/* Players on one line: Team1  vs  Team2 */}
+      <div className="flex items-center gap-1.5 py-0.5">
+        <div className={`flex items-center gap-1 min-w-0 flex-1 ${isWinner(match.team1Id) ? "font-bold text-primary" : ""}`}>
           {isWinner(match.team1Id) && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
+          {isCompleted && match.team1Score !== null && (
+            <span className="font-mono font-bold tabular-nums shrink-0">{match.team1Score}</span>
+          )}
           <span className="truncate">{getDisplayName(team1, match.team1Id)}</span>
         </div>
-        {isCompleted && match.team1Score !== null && (
-          <span className="font-mono font-bold tabular-nums">{match.team1Score}</span>
-        )}
-      </div>
-
-      <div className="border-t border-border/30 my-1" />
-
-      {/* Team 2 */}
-      <div className={`flex items-center justify-between gap-2 py-0.5 ${isWinner(match.team2Id) ? "font-bold text-primary" : ""}`}>
-        <div className="flex items-center gap-1.5 min-w-0">
+        <span className="text-[10px] text-muted-foreground/60 shrink-0 px-1">vs</span>
+        <div className={`flex items-center gap-1 min-w-0 flex-1 justify-end ${isWinner(match.team2Id) ? "font-bold text-primary" : ""}`}>
+          <span className="truncate text-right">{getDisplayName(team2, match.team2Id)}</span>
+          {isCompleted && match.team2Score !== null && (
+            <span className="font-mono font-bold tabular-nums shrink-0">{match.team2Score}</span>
+          )}
           {isWinner(match.team2Id) && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
-          <span className="truncate">{getDisplayName(team2, match.team2Id)}</span>
         </div>
-        {isCompleted && match.team2Score !== null && (
-          <span className="font-mono font-bold tabular-nums">{match.team2Score}</span>
-        )}
       </div>
 
       {/* Status */}
