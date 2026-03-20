@@ -4458,36 +4458,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("[TEAM_SEARCH] Searching for:", query);
 
-      let allowedTeamProfileIds: Set<string> | null = null;
+      const teamProfileResults: any[] = [];
+
       if (tournamentId) {
+        // When scoped to a tournament, fetch registered team profiles directly by ID
         const tournamentRegistrations = await storage.getRegistrationsByTournament(tournamentId);
         const eligibleIds = tournamentRegistrations
           .filter((r) => r.status !== "rejected" && !!r.teamProfileId)
           .map((r) => r.teamProfileId as string);
-        allowedTeamProfileIds = new Set(eligibleIds);
-      }
 
-      // Get all users to look up owners later
-      const allUsers = await storage.getAllUsers();
+        const teamFetches = await Promise.all(eligibleIds.map((id) => storage.getTeamProfile(id)));
+        const registeredTeams = teamFetches.filter((t): t is NonNullable<typeof t> => !!t);
 
-      // We need to get all team profiles - use getAllTeamProfiles or similar
-      // Since there's no direct method, we'll fetch profiles by searching all users' teams
-      const teamProfileResults: any[] = [];
-
-      // Get teams for all users who might be owners
-      for (const user of allUsers.slice(0, 100)) { // Limit to prevent too many queries
-        const userTeams = await storage.getTeamProfilesByOwner(user.id);
-        for (const team of userTeams) {
-          if (allowedTeamProfileIds && !allowedTeamProfileIds.has(team.id)) {
-            continue;
-          }
-
+        for (const team of registeredTeams) {
           if (
             team.name.toLowerCase().includes(query) ||
             (team.profileId && team.profileId.toLowerCase().includes(query))
           ) {
-            // Find owner info
-            const owner = allUsers.find(u => u.id === team.ownerId);
+            const owner = team.ownerId ? await storage.getUser(team.ownerId) : null;
             teamProfileResults.push({
               id: team.id,
               name: team.name,
@@ -4504,9 +4492,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         }
-
-        // Stop if we have enough results
-        if (teamProfileResults.length >= 10) break;
+      } else {
+        // No tournament scope — fall back to searching across all users' teams
+        const allUsers = await storage.getAllUsers();
+        for (const user of allUsers.slice(0, 100)) {
+          const userTeams = await storage.getTeamProfilesByOwner(user.id);
+          for (const team of userTeams) {
+            if (
+              team.name.toLowerCase().includes(query) ||
+              (team.profileId && team.profileId.toLowerCase().includes(query))
+            ) {
+              const owner = allUsers.find(u => u.id === team.ownerId);
+              teamProfileResults.push({
+                id: team.id,
+                name: team.name,
+                profileId: team.profileId,
+                logoUrl: team.logoUrl,
+                game: team.game,
+                totalMembers: team.totalMembers,
+                captain: owner ? {
+                  userId: owner.id,
+                  username: owner.username,
+                  displayName: owner.displayName,
+                  avatarUrl: owner.avatarUrl,
+                } : null,
+              });
+            }
+          }
+          if (teamProfileResults.length >= 10) break;
+        }
       }
 
       console.log("[TEAM_SEARCH] Found", teamProfileResults.length, "matches");
