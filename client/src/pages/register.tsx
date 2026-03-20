@@ -17,9 +17,12 @@ import { useToast } from "@/hooks/use-toast";
 import { PasswordInput } from "@/components/PasswordInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { LogoTenOnTen } from "@/components/LogoTenOnTen";
+import { useState, useEffect } from "react";
+import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 const registerSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
+  username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string(),
@@ -30,15 +33,60 @@ const registerSchema = z.object({
 
 type RegisterForm = z.infer<typeof registerSchema>;
 
+function generateSuggestions(base: string): string[] {
+  const b = base.toLowerCase().replace(/\s+/g, '');
+  return [
+    `${b}1`,
+    `${b}_`,
+    `${b}99`,
+    `the${b}`,
+    `${b}_x`,
+  ];
+}
+
 export default function Register() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { refetchUser } = useAuth();
 
+  const [usernameInput, setUsernameInput] = useState("");
+  const [debouncedUsername, setDebouncedUsername] = useState("");
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+
+  // Debounce username input by 500ms
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedUsername(usernameInput), 500);
+    return () => clearTimeout(timer);
+  }, [usernameInput]);
+
+  // Check availability when debounced value changes
+  useEffect(() => {
+    if (debouncedUsername.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+    let cancelled = false;
+    setIsCheckingUsername(true);
+    fetch(`/api/users/check-username?username=${encodeURIComponent(debouncedUsername)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          setUsernameAvailable(data.available);
+          setIsCheckingUsername(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsCheckingUsername(false);
+      });
+    return () => { cancelled = true; };
+  }, [debouncedUsername]);
+
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       fullName: "",
+      username: "",
       email: "",
       password: "",
       confirmPassword: "",
@@ -49,6 +97,7 @@ export default function Register() {
     mutationFn: async (data: RegisterForm) => {
       const res = await apiRequest('POST', '/api/auth/register', {
         fullName: data.fullName,
+        username: data.username.toLowerCase().replace(/\s+/g, ''),
         email: data.email,
         password: data.password,
       });
@@ -84,8 +133,15 @@ export default function Register() {
   });
 
   const onSubmit = (data: RegisterForm) => {
+    if (usernameAvailable === false) return;
     registerMutation.mutate(data);
   };
+
+  const suggestions = usernameAvailable === false && debouncedUsername.length >= 3
+    ? generateSuggestions(debouncedUsername)
+    : [];
+
+  const inputClass = "flex-1 bg-white/90 text-black border-0 rounded-full h-9 text-sm px-4 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 transition-all duration-300 hover:bg-white focus:bg-white shadow-inner";
 
   return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center py-8 px-4 bg-black relative overflow-hidden">
@@ -115,12 +171,78 @@ export default function Register() {
                       </span>
                       <FormControl>
                         <Input
-                          className="flex-1 bg-white/90 text-black border-0 rounded-full h-9 text-sm px-4 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 transition-all duration-300 hover:bg-white focus:bg-white shadow-inner"
+                          className={inputClass}
                           {...field}
                           data-testid="input-fullname"
                         />
                       </FormControl>
                     </div>
+                    <FormMessage className="text-red-400 mt-1 text-xs pl-[102px]" />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem className="animate-slide-up [animation-delay:130ms]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-white/70 text-[11px] font-medium tracking-widest uppercase w-[90px] text-right shrink-0">
+                        USERNAME:
+                      </span>
+                      <div className="flex-1 relative">
+                        <FormControl>
+                          <Input
+                            className={inputClass + " pr-8"}
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              setUsernameInput(e.target.value);
+                            }}
+                            data-testid="input-username"
+                          />
+                        </FormControl>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          {isCheckingUsername && (
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                          )}
+                          {!isCheckingUsername && usernameAvailable === true && (
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                          )}
+                          {!isCheckingUsername && usernameAvailable === false && (
+                            <XCircle className="w-4 h-4 text-red-500" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Availability status */}
+                    {!isCheckingUsername && usernameAvailable === true && (
+                      <p className="text-green-400 mt-1 text-xs pl-[102px]">Username available</p>
+                    )}
+                    {!isCheckingUsername && usernameAvailable === false && (
+                      <div className="pl-[102px] mt-1 space-y-2">
+                        <p className="text-red-400 text-xs">Username already taken</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {suggestions.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => {
+                                form.setValue("username", s);
+                                setUsernameInput(s);
+                              }}
+                              className="text-xs px-2.5 py-1 rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                              data-testid={`suggestion-${s}`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <FormMessage className="text-red-400 mt-1 text-xs pl-[102px]" />
                   </FormItem>
                 )}
@@ -138,7 +260,7 @@ export default function Register() {
                       <FormControl>
                         <Input
                           type="email"
-                          className="flex-1 bg-white/90 text-black border-0 rounded-full h-9 text-sm px-4 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 transition-all duration-300 hover:bg-white focus:bg-white shadow-inner"
+                          className={inputClass}
                           {...field}
                           data-testid="input-email"
                         />
@@ -197,7 +319,7 @@ export default function Register() {
                 <Button
                   type="submit"
                   className="w-full bg-gradient-to-b from-gray-200 to-gray-400 text-black font-semibold uppercase tracking-widest rounded-full h-10 text-sm border-2 border-white/50 hover:from-white hover:to-gray-300 hover:border-white transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/20 active:scale-95"
-                  disabled={registerMutation.isPending}
+                  disabled={registerMutation.isPending || usernameAvailable === false || isCheckingUsername}
                   data-testid="button-register"
                 >
                   {registerMutation.isPending ? "CREATING..." : "CREATE ACCOUNT"}

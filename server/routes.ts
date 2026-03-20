@@ -296,6 +296,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: "Slow response completed in 3000ms" });
   });
 
+  // Check username availability (used during registration)
+  app.get("/api/users/check-username", async (req, res) => {
+    try {
+      const username = (req.query.username as string || '').trim().toLowerCase();
+      if (!username || username.length < 3) {
+        return res.json({ available: false });
+      }
+      const existing = await storage.getUserByUsername(username);
+      return res.json({ available: !existing });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Search users for new chat - Defined early to avoid 404s
   app.get("/api/users/search", async (req, res) => {
     try {
@@ -689,6 +704,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fullName: z.string().min(2),
         email: z.string().email(),
         password: z.string().min(6),
+        username: z.string().min(3).optional(),
       });
       const validatedData = registerSchema.parse(req.body);
       log('INFO', 'User registration attempt', { email: validatedData.email });
@@ -717,7 +733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create user with verified/unverified status based on env var
       const user = await storage.createUser({
-        username: validatedData.fullName.toLowerCase().replace(/\s+/g, ''),
+        username: validatedData.username || validatedData.fullName.toLowerCase().replace(/\s+/g, ''),
         email: validatedData.email,
         passwordHash: hashedPassword,
         displayName: validatedData.fullName,
