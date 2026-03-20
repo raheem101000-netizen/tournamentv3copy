@@ -4463,9 +4463,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (tournamentId) {
         // When scoped to a tournament, fetch registered team profiles directly by ID
         const tournamentRegistrations = await storage.getRegistrationsByTournament(tournamentId);
+
+        console.log("[TEAM_SEARCH] tournamentId:", tournamentId);
+        console.log("[TEAM_SEARCH] total registrations:", tournamentRegistrations.length);
+        console.log("[TEAM_SEARCH] registrations full:", JSON.stringify(tournamentRegistrations.map(r => ({
+          id: r.id,
+          status: r.status,
+          teamProfileId: r.teamProfileId,
+          userId: r.userId,
+        })), null, 2));
+        console.log("[TEAM_SEARCH] with teamProfileId:", tournamentRegistrations.filter(r => !!r.teamProfileId).length);
+        console.log("[TEAM_SEARCH] with null teamProfileId:", tournamentRegistrations.filter(r => !r.teamProfileId).length);
+
         const eligibleIds = tournamentRegistrations
           .filter((r) => r.status !== "rejected" && !!r.teamProfileId)
           .map((r) => r.teamProfileId as string);
+
+        console.log("[TEAM_SEARCH] eligibleIds:", eligibleIds);
 
         const teamFetches = await Promise.all(eligibleIds.map((id) => storage.getTeamProfile(id)));
         const registeredTeams = teamFetches.filter((t): t is NonNullable<typeof t> => !!t);
