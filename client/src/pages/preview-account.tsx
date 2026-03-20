@@ -992,7 +992,7 @@ export default function PreviewAccount() {
                                     {member.user?.username?.substring(0, 2).toUpperCase() || "??"}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span className="text-sm font-medium">@{member.user?.username || "unknown"}</span>
+                                <span className="text-sm font-medium">{member.user?.displayName || member.user?.username || "Unknown"}</span>
                               </div>
                               <Input
                                 placeholder="Position (e.g., IGL, Support, AWPer)"
@@ -1027,7 +1027,7 @@ export default function PreviewAccount() {
                               </Avatar>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">
-                                  @{member.user?.username || "unknown"}
+                                  {member.user?.displayName || member.user?.username || "Unknown"}
                                 </p>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   {member.role === "Owner" && (
