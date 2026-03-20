@@ -44,10 +44,10 @@ export default function MobilePreviewHome() {
     if (!filtersExpanded) return;
 
     const closeFiltersOnScroll = () => setFiltersExpanded(false);
-    window.addEventListener("scroll", closeFiltersOnScroll, true);
+    window.addEventListener("scroll", closeFiltersOnScroll);
 
     return () => {
-      window.removeEventListener("scroll", closeFiltersOnScroll, true);
+      window.removeEventListener("scroll", closeFiltersOnScroll);
     };
   }, [filtersExpanded]);
 
