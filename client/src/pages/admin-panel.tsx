@@ -21,10 +21,6 @@ const predefinedAchievements = [
   { id: "champion", icon: Trophy, color: "text-amber-500", title: "Champion" },
   { id: "runner-up", icon: Medal, color: "text-slate-300", title: "Runner Up" },
   { id: "third-place", icon: Medal, color: "text-amber-700", title: "Third Place" },
-  { id: "mvp", icon: Award, color: "text-purple-500", title: "MVP" },
-  { id: "top-scorer", icon: Target, color: "text-red-500", title: "Top Scorer" },
-  { id: "best-defense", icon: Shield, color: "text-green-500", title: "Best Defense" },
-  { id: "rising-star", icon: Zap, color: "text-yellow-500", title: "Rising Star" },
 ];
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";

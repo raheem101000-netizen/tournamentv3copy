@@ -48,10 +48,6 @@ const predefinedAchievements = [
   { id: "champion", icon: Trophy, color: "text-amber-500", title: "Champion", isEditable: false },
   { id: "runner-up", icon: Medal, color: "text-slate-300", title: "Runner Up", isEditable: false },
   { id: "third-place", icon: Medal, color: "text-amber-700", title: "Third Place", isEditable: false },
-  { id: "mvp", icon: Award, color: "text-purple-500", title: "MVP", isEditable: false },
-  { id: "top-scorer", icon: Target, color: "text-red-500", title: "", isEditable: true },
-  { id: "best-defense", icon: Shield, color: "text-green-500", title: "", isEditable: true },
-  { id: "rising-star", icon: Zap, color: "text-yellow-500", title: "", isEditable: true },
 ];
 
 const awardAchievementSchema = z.object({
