@@ -150,7 +150,7 @@ export default function MobilePreviewHome() {
             />
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 hide-scrollbar flex-nowrap touch-pan-x" style={{ WebkitOverflowScrolling: 'touch' } as any}>
             <Button
               variant={filtersExpanded || selectedGames.length > 0 ? "default" : "outline"}
               size="sm"
