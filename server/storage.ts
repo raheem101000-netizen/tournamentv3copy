@@ -1072,19 +1072,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async searchUsers(query: string): Promise<User[]> {
-    if (!query || query.length < 2) return [];
+    if (!query || query.length < 1) return [];
 
     return await db
       .select()
       .from(users)
-      .where(
-        or(
-          ilike(users.username, `%${query}%`),
-          ilike(users.displayName, `%${query}%`),
-          ilike(users.email, `%${query}%`),
-          eq(users.id, query) // Allow searching by exact ID
-        )
-      )
+      .where(ilike(users.username, `%${query}%`))
       .limit(10);
   }
 

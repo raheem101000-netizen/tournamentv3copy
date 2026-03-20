@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { BottomNavigation } from "@/components/BottomNavigation";
 import Particles from "@/components/ui/particles"; import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 
 interface TeamPlayer {
+  userId: string;
   username: string;
   avatar: string;
   position: string;
@@ -40,19 +41,22 @@ export default function PreviewCreateTeam() {
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [playerSearch, setPlayerSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch friends from API
-  const { data: friends = [] } = useQuery<any[]>({
-    queryKey: ["/api/friends"],
-  });
+  // Debounce the search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(playerSearch), 300);
+    return () => clearTimeout(timer);
+  }, [playerSearch]);
 
-  // Filter friends based on search query
-  const filteredFriends = friends.filter((friend: any) =>
-    friend.username?.toLowerCase().includes(playerSearch.toLowerCase()) ||
-    friend.displayName?.toLowerCase().includes(playerSearch.toLowerCase())
-  );
+  // Search all users by username
+  const { data: searchResults = [], isFetching: isSearching } = useQuery<any[]>({
+    queryKey: ["/api/users/search", debouncedSearch],
+    queryFn: () => apiRequest("GET", `/api/users/search?q=${encodeURIComponent(debouncedSearch)}`),
+    enabled: debouncedSearch.length >= 1,
+  });
 
   // Mutation to create team
   const createTeamMutation = useMutation({
@@ -66,17 +70,13 @@ export default function PreviewCreateTeam() {
         // Owner is added automatically by backend
 
         // Add all players as team members in parallel
-        const memberPromises = players.map((player) => {
-          const friend = friends.find((f: any) => f.username === player.username);
-          if (friend) {
-            return apiRequest("POST", `/api/team-profiles/${createdTeam.id}/members`, {
-              userId: friend.id,
-              role: "Member",
-              position: player.position || null,
-            });
-          }
-          return Promise.resolve(null); // Skip if friend not found
-        });
+        const memberPromises = players.map((player) =>
+          apiRequest("POST", `/api/team-profiles/${createdTeam.id}/members`, {
+            userId: player.userId,
+            role: "Member",
+            position: player.position || null,
+          })
+        );
 
         await Promise.all(memberPromises);
       } catch (err) {
@@ -155,10 +155,12 @@ export default function PreviewCreateTeam() {
     }
   };
 
-  const addPlayer = (username: string, avatar: string) => {
+  const addPlayer = (userId: string, username: string, avatar: string) => {
     if (!players.find(p => p.username === username)) {
-      setPlayers([...players, { username, avatar, position: "" }]);
+      setPlayers([...players, { userId, username, avatar, position: "" }]);
       setShowAddPlayer(false);
+      setPlayerSearch("");
+      setDebouncedSearch("");
     }
   };
 
@@ -408,12 +410,18 @@ export default function PreviewCreateTeam() {
       />
 
       {/* Add Player Modal */}
-      <Dialog open={showAddPlayer} onOpenChange={setShowAddPlayer}>
+      <Dialog open={showAddPlayer} onOpenChange={(open) => {
+        setShowAddPlayer(open);
+        if (!open) {
+          setPlayerSearch("");
+          setDebouncedSearch("");
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Add Player</DialogTitle>
             <DialogDescription>
-              Search and add players from your friends list
+              Search all players by username
             </DialogDescription>
           </DialogHeader>
 
@@ -421,7 +429,7 @@ export default function PreviewCreateTeam() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search friends..."
+                placeholder="Search by username..."
                 className="pl-9"
                 value={playerSearch}
                 onChange={(e) => setPlayerSearch(e.target.value)}
@@ -430,35 +438,42 @@ export default function PreviewCreateTeam() {
             </div>
 
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {filteredFriends.length === 0 ? (
+              {debouncedSearch.length === 0 ? (
                 <div className="py-8 text-center">
                   <Users className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    {friends.length === 0
-                      ? "No friends yet. Add friends to invite them to your team!"
-                      : "No friends match your search."}
+                    Type a username to search all players
                   </p>
                 </div>
+              ) : isSearching ? (
+                <div className="py-8 text-center">
+                  <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin text-muted-foreground" />
+                </div>
+              ) : searchResults.length === 0 ? (
+                <div className="py-8 text-center">
+                  <Users className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No users found</p>
+                </div>
               ) : (
-                filteredFriends.map((friend: any) => {
-                  const alreadyAdded = players.find(p => p.username === friend.username);
+                searchResults.map((result: any) => {
+                  const alreadyAdded = players.find(p => p.username === result.username);
                   return (
                     <Card
-                      key={friend.id}
+                      key={result.id}
                       className={`p-3 ${alreadyAdded ? 'opacity-50' : 'hover-elevate cursor-pointer'}`}
-                      onClick={() => !alreadyAdded && addPlayer(friend.username, friend.avatarUrl || "")}
-                      data-testid={`friend-${friend.username}`}
+                      onClick={() => !alreadyAdded && addPlayer(result.id, result.username, result.avatarUrl || "")}
+                      data-testid={`user-${result.username}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <Avatar className="w-10 h-10">
-                            <AvatarImage src={friend.avatarUrl} />
-                            <AvatarFallback>{friend.username?.[0]?.toUpperCase() || "?"}</AvatarFallback>
+                            <AvatarImage src={result.avatarUrl} />
+                            <AvatarFallback>{result.username?.[0]?.toUpperCase() || "?"}</AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-semibold text-sm">@{friend.username}</p>
-                            {friend.displayName && (
-                              <p className="text-xs text-muted-foreground">{friend.displayName}</p>
+                            <p className="text-sm">@{result.username}</p>
+                            {result.displayName && (
+                              <p className="text-sm">{result.displayName}</p>
                             )}
                           </div>
                         </div>
