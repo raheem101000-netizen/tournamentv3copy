@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, Users, Trophy, DollarSign, Star, Info, Search, Gamepad2, Laptop, MapPin, SlidersHorizontal, X } from "lucide-react";
+import { Calendar, Users, Trophy, DollarSign, Star, Info, Search, Gamepad2, Laptop, MapPin, SlidersHorizontal, X, Bookmark, BookmarkCheck } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import type { Tournament, Server } from "@shared/schema";
 import { MobileLayout } from "@/components/layouts/MobileLayout";
@@ -253,9 +253,10 @@ export default function MobilePreviewHome() {
                       className="h-8 w-8 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white border border-white/10"
                       onClick={(e) => handleToggleSave(e, tournament.id)}
                     >
-                      <Star
-                        className={`h-4 w-4 ${savedTournaments?.some(st => st.id === tournament.id) ? "fill-yellow-400 text-yellow-400" : "text-white"}`}
-                      />
+                      {savedTournaments?.some(st => st.id === tournament.id)
+                        ? <BookmarkCheck className="h-4 w-4 fill-current text-yellow-400" />
+                        : <Bookmark className="h-4 w-4 text-white" />
+                      }
                     </Button>
                   </div>
 
