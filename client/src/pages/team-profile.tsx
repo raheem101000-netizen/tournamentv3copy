@@ -282,7 +282,7 @@ export default function TeamProfilePage() {
                                                 </AvatarFallback>
                                             </Avatar>
                                             <div className="flex-1">
-                                                <p className="font-medium">@{member.user?.username || "Unknown"}</p>
+                                                <p className="font-medium">{member.user?.displayName || member.user?.username || "Unknown"}</p>
                                                 <div className="flex items-center gap-2">
                                                     {member.role && (
                                                         <Badge variant="outline" className="text-xs">
