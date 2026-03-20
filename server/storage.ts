@@ -763,7 +763,7 @@ export class DatabaseStorage implements IStorage {
         .from(registrations)
         .where(and(eq(registrations.userId, userId), eq(registrations.status, "approved"))),
 
-      // 2. Get ALL threads (Direct + Match) in one query
+      // 2. Get all threads this user can potentially see (direct + match)
       db.select()
         .from(messageThreads)
         .where(
@@ -782,15 +782,33 @@ export class DatabaseStorage implements IStorage {
         )
     ]);
 
+    // 3. For match threads, check that both players are confirmed real players.
+    //    Bracket placeholder slots (team1Id or team2Id is null) must never appear in any inbox.
+    const matchThreads = allThreads.filter(t => t.matchId);
+    const confirmedMatchIds = new Set<string>();
+    if (matchThreads.length > 0) {
+      const matchIds = matchThreads.map(t => t.matchId!);
+      const confirmedMatches = await db
+        .select({ id: matches.id })
+        .from(matches)
+        .where(
+          and(
+            inArray(matches.id, matchIds),
+            isNotNull(matches.team1Id),
+            isNotNull(matches.team2Id)
+          )
+        );
+      confirmedMatches.forEach(m => confirmedMatchIds.add(m.id));
+    }
+
     // If user is not approved in any tournament, filter out match threads
     // (Only allow Direct Threads)
     const canViewMatchThreads = userTournaments.length > 0;
 
     const visibleThreads = allThreads.filter(thread => {
-      // If it's a direct thread, always visible
-      if (!thread.matchId) return true;
-      // If it's a match thread, only visible if user has tournament access
-      return canViewMatchThreads;
+      if (!thread.matchId) return true;           // direct thread — always visible
+      if (!canViewMatchThreads) return false;     // no tournament access
+      return confirmedMatchIds.has(thread.matchId); // only show fully-confirmed matches
     });
 
     console.log(`[MSG-THREADS] Returning ${visibleThreads.length} threads (Optimized Single Query)`);

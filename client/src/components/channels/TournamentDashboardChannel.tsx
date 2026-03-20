@@ -526,11 +526,23 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   // For league/round_robin: participants see only their oldest unresolved match.
   // Organizers always see all matches. Applies only when selectedTournament is loaded.
   const visibleMatchChatList = (() => {
-    if (!selectedTournament || isOrganizer) return selectedTournamentMatches;
+    if (!selectedTournament) return [];
+
+    // For knockout tournaments: never show bracket slots where one or both players
+    // are not yet confirmed. League/round-robin matches always have both players set
+    // at creation time, so no filtering is needed for those formats.
+    console.log('[visibleMatchChatList] selectedTournamentMatches:', selectedTournamentMatches.map((m: any) => ({
+      id: m.id, round: m.round, side: m.side, team1Id: m.team1Id, team2Id: m.team2Id,
+    })));
+    const withConfirmedPlayers = selectedTournament.format === 'single_elimination'
+      ? selectedTournamentMatches.filter((m: any) => m.team1Id && m.team2Id)
+      : selectedTournamentMatches;
+
+    if (isOrganizer) return withConfirmedPlayers;
 
     const fmt = selectedTournament.format;
     const isLeague = fmt === 'league' || fmt === 'round_robin';
-    if (!isLeague) return selectedTournamentMatches;
+    if (!isLeague) return withConfirmedPlayers;
 
     // Step 1: find the user's team ID.
     // Primary: match via registrations (direct userId — most reliable).
@@ -558,9 +570,10 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     if (!userTeamId) return [];
 
     // Step 2: get all matches for this user's team, sorted oldest-first by round.
-    const myMatches = selectedTournamentMatches
-      .filter(m => m.team1Id === userTeamId || m.team2Id === userTeamId)
-      .sort((a, b) => (a.round ?? 0) - (b.round ?? 0));
+    // Use withConfirmedPlayers to exclude any placeholder bracket slots.
+    const myMatches = withConfirmedPlayers
+      .filter((m: any) => m.team1Id === userTeamId || m.team2Id === userTeamId)
+      .sort((a: any, b: any) => (a.round ?? 0) - (b.round ?? 0));
 
     // Step 3: surface only the oldest unresolved match.
     const activeMatch = myMatches.find(
@@ -786,7 +799,34 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                   <p className="text-muted-foreground">
                     No matches scheduled yet
                   </p>
-                  {selectedTournamentTeams.length >= 2 && (user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
+                  {/* Knockout: one-time bracket initialisation */}
+                  {selectedTournament.format === 'single_elimination' && selectedTournamentTeams.length >= 2 && (user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
+                    <Button
+                      onClick={() => {
+                        apiRequest('POST', `/api/tournaments/${selectedTournamentId}/generate-fixtures`)
+                          .then(() => {
+                            queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/matches`] });
+                            toast({
+                              title: "Bracket Initialized",
+                              description: "The knockout bracket has been created. Match chats will open automatically as each round is confirmed.",
+                            });
+                          })
+                          .catch((error) => {
+                            toast({
+                              title: "Error",
+                              description: error.message || "Failed to initialize bracket",
+                              variant: "destructive",
+                            });
+                          });
+                      }}
+                      data-testid="button-initialize-bracket"
+                    >
+                      <Trophy className="h-4 w-4 mr-2" />
+                      Initialize Bracket
+                    </Button>
+                  )}
+                  {/* Non-knockout: standard match generation */}
+                  {selectedTournament.format !== 'single_elimination' && selectedTournamentTeams.length >= 2 && (user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
                     <Button
                       onClick={() => {
                         apiRequest('POST', `/api/tournaments/${selectedTournamentId}/generate-fixtures`)
@@ -1190,27 +1230,44 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             {(user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin') ? (
               registrations.filter(r => r.status === 'approved').length > 0 ? (
                 <div className="space-y-4">
-                  <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
-                    <h3 className="font-semibold text-sm">Match Generation</h3>
-                    <div className="flex gap-2 items-end">
-                      <div className="flex-1 space-y-2">
-                        <Label htmlFor="roundName">Round Name (Optional)</Label>
-                        <Input
-                          id="roundName"
-                          placeholder="e.g. Quarterfinals"
-                          value={roundName}
-                          onChange={(e) => setRoundName(e.target.value)}
-                        />
-                      </div>
+                  {selectedTournament.format === 'single_elimination' && selectedTournamentMatches.filter((m: any) => m.matchType !== 'manual').length === 0 && (
+                    <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
+                      <h3 className="font-semibold text-sm">Knockout Bracket</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Generate the bracket once. Match chats will open automatically as each round's players are confirmed.
+                      </p>
                       <Button
                         onClick={() => generateFixturesMutation.mutate()}
                         disabled={generateFixturesMutation.isPending || registrations.filter(r => r.status === 'approved').length < 2}
-                        data-testid="button-generate-matches"
+                        data-testid="button-initialize-bracket"
                       >
-                        {generateFixturesMutation.isPending ? "Generating..." : "Generate Matches"}
+                        {generateFixturesMutation.isPending ? "Initializing..." : "Initialize Bracket"}
                       </Button>
                     </div>
-                  </div>
+                  )}
+                  {selectedTournament.format !== 'single_elimination' && (
+                    <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
+                      <h3 className="font-semibold text-sm">Match Generation</h3>
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1 space-y-2">
+                          <Label htmlFor="roundName">Round Name (Optional)</Label>
+                          <Input
+                            id="roundName"
+                            placeholder="e.g. Quarterfinals"
+                            value={roundName}
+                            onChange={(e) => setRoundName(e.target.value)}
+                          />
+                        </div>
+                        <Button
+                          onClick={() => generateFixturesMutation.mutate()}
+                          disabled={generateFixturesMutation.isPending || registrations.filter(r => r.status === 'approved').length < 2}
+                          data-testid="button-generate-matches"
+                        >
+                          {generateFixturesMutation.isPending ? "Generating..." : "Generate Matches"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between">
                     <Button

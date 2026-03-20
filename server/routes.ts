@@ -105,6 +105,13 @@ async function createMatchThreadsForAllMembers(
   team2Id: string | null,
   roundName?: string
 ): Promise<void> {
+  // Never create a match chat for a bracket slot that doesn't yet have 2 confirmed real players.
+  // This guards every call site — no placeholder "TBD vs TBD" threads will ever be created.
+  if (!team1Id || !team2Id) {
+    console.log(`[MATCH-THREAD-CREATE] Skipping thread creation for match ${matchId} — one or both players not yet confirmed`);
+    return;
+  }
+
   try {
     // Get team info for match name
     const team1 = team1Id ? await storage.getTeam(team1Id) : null;
@@ -1457,9 +1464,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (matches) {
           const createdMatches = await Promise.all(matches.map((match) => storage.createMatch(match)));
-          // PERMANENT: Create match threads for all team members immediately
+          // PERMANENT: Create match threads for all team members immediately.
+          // For single_elimination: skip placeholder future-round slots (null teams); their
+          // chats are created by winner-propagation once both slots are confirmed.
           for (const createdMatch of createdMatches) {
-            await createMatchThreadsForAllMembers(createdMatch.id, createdMatch.team1Id, createdMatch.team2Id);
+            if (tournament.format === 'single_elimination' && (!createdMatch.team1Id || !createdMatch.team2Id)) {
+              continue; // placeholder slot — chat created later via winner propagation
+            }
+            await createMatchThreadsForAllMembers(
+              createdMatch.id,
+              createdMatch.team1Id,
+              createdMatch.team2Id,
+              createdMatch.roundName ?? undefined
+            );
           }
         }
       }
@@ -1934,6 +1951,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await storage.updateMatch(match.nextMatchId, {
               [isFirstSlot ? "team1Id" : "team2Id"]: req.body.winnerId,
             });
+
+            // Auto-create match chat thread when both players in the next slot are now confirmed.
+            const updatedNext = await storage.getMatch(match.nextMatchId);
+            if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
+              await createMatchThreadsForAllMembers(
+                updatedNext.id,
+                updatedNext.team1Id,
+                updatedNext.team2Id,
+                updatedNext.roundName ?? undefined
+              );
+            }
           } else {
             // Legacy fallback: position-based lookup
             const allMatches = await storage.getMatchesByTournament(tournament.id);
@@ -1952,6 +1980,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 await storage.updateMatch(nextMatch.id, {
                   [isFirstSlot ? "team1Id" : "team2Id"]: req.body.winnerId,
                 });
+
+                // Auto-create chat thread once both players are in the next slot.
+                const updatedNext = await storage.getMatch(nextMatch.id);
+                if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
+                  await createMatchThreadsForAllMembers(
+                    updatedNext.id,
+                    updatedNext.team1Id,
+                    updatedNext.team2Id,
+                    updatedNext.roundName ?? undefined
+                  );
+                }
               }
             }
           }
@@ -2275,6 +2314,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateMatch(match.nextMatchId, {
             [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
           });
+
+          // Auto-create match chat thread when both players in the next slot are now confirmed.
+          const updatedNext = await storage.getMatch(match.nextMatchId);
+          if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
+            await createMatchThreadsForAllMembers(
+              updatedNext.id,
+              updatedNext.team1Id,
+              updatedNext.team2Id,
+              updatedNext.roundName ?? undefined
+            );
+          }
         } else {
           // Legacy fallback: position-based lookup
           const allMatches = await storage.getMatchesByTournament(winnerTournament.id);
@@ -2293,8 +2343,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
               await storage.updateMatch(nextMatch.id, {
                 [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
               });
+
+              // Auto-create chat thread once both players are in the next slot.
+              const updatedNext = await storage.getMatch(nextMatch.id);
+              if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
+                await createMatchThreadsForAllMembers(
+                  updatedNext.id,
+                  updatedNext.team1Id,
+                  updatedNext.team2Id,
+                  updatedNext.roundName ?? undefined
+                );
+              }
             }
           }
+        }
+
+        // Once the Final is resolved, mark the tournament complete.
+        // The Final is the only bracket match with no nextMatchId.
+        if (!match.nextMatchId && (match as any).matchType !== 'manual') {
+          await storage.updateTournament(match.tournamentId, { status: "completed" });
+          log('INFO', 'Tournament completed', { tournamentId: match.tournamentId });
         }
       }
 
@@ -2469,6 +2537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           team2Id,
           round: maxRound + 1,
           status: "pending",
+          matchType: "manual",
         });
 
         console.log("[MATCH-CREATION] New match created:", matchToReturn.id);
@@ -2537,6 +2606,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (activeTeams.length < 2) {
         return res.status(400).json({ error: "Need at least 2 active teams to generate matches" });
+      }
+
+      // Guard: single_elimination bracket can only be generated once.
+      // The bracket drives everything; subsequent rounds are filled automatically via winner propagation.
+      if (tournament.format === 'single_elimination') {
+        const existingMatches = await storage.getMatchesByTournament(tournament.id);
+        const existingBracketMatches = existingMatches.filter((m: any) => m.matchType !== 'manual');
+        if (existingBracketMatches.length > 0) {
+          return res.status(409).json({
+            error: "Bracket already generated. For knockout tournaments the bracket is managed automatically — match chats are created as each round's players are confirmed."
+          });
+        }
       }
 
       log('INFO', 'Generating fixtures', {
@@ -2682,10 +2763,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Create match threads for all created matches
-      // This ensures organizers and participants can chat immediately
+      // Create match threads for created matches.
+      // For single_elimination: only create a thread when BOTH players are confirmed real players.
+      // Future-round slots (team1Id/team2Id still null) will have their threads auto-created
+      // by the winner-propagation logic once both slots are filled.
       for (const match of createdMatches) {
-        await createMatchThreadsForAllMembers(match.id, match.team1Id, match.team2Id, roundName);
+        if (tournament.format === 'single_elimination' && (!match.team1Id || !match.team2Id)) {
+          continue; // placeholder slot — thread created later via winner propagation
+        }
+        await createMatchThreadsForAllMembers(match.id, match.team1Id, match.team2Id, match.roundName ?? roundName);
       }
 
       log('INFO', 'Fixtures generated successfully', {
@@ -5521,6 +5607,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const hasMatchAccess = await canAccessMatch(req.session.userId, matchId);
       if (!hasMatchAccess) {
         return res.status(403).json({ error: "Forbidden" });
+      }
+
+      // Guard: never open a chat for a bracket slot that doesn't yet have 2 confirmed players.
+      const matchForThreadCheck = await storage.getMatch(matchId);
+      if (!matchForThreadCheck) {
+        return res.status(404).json({ error: "Match not found" });
+      }
+      if (
+        (matchForThreadCheck as any).matchType !== 'manual' &&
+        (!matchForThreadCheck.team1Id || !matchForThreadCheck.team2Id)
+      ) {
+        return res.status(403).json({
+          error: "Match chat is not yet available — waiting for both players to be confirmed in this bracket slot."
+        });
       }
 
       // Try to find existing thread for this match using storage

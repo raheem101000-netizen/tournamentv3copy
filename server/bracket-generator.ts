@@ -97,6 +97,7 @@ export function generateSingleEliminationBracket(
       team2Score: null,
       roundName: getRoundName(round, totalRounds),
       isBye: hasBye ? 1 : 0,
+      matchType: "auto" as const,
     };
   }
 
@@ -169,6 +170,7 @@ export function generateSingleEliminationBracket(
     team2Score: null,
     roundName: "Final",
     isBye: 0,
+    matchType: "auto" as const,
   });
 
   // ── Propagate byes into next rounds ──────────────────────────────────────
