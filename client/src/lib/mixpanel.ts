@@ -1,6 +1,6 @@
 import mixpanel from "mixpanel-browser";
 
-mixpanel.init("00a1da5e811921bee743c322ce0f409e", {
+mixpanel.init(import.meta.env.VITE_MIXPANEL_TOKEN, {
   track_pageview: true,
 });
 
