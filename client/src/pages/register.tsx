@@ -126,6 +126,7 @@ export default function Register() {
       const user = await refetchUser();
 
       if (user) {
+        mixpanel.identify(String((user as any).id));
         toast({
           title: "Account created!",
           description: "You're now logged in.",
@@ -134,6 +135,7 @@ export default function Register() {
       } else {
         const retryUser = await refetchUser();
         if (retryUser) {
+          mixpanel.identify(String((retryUser as any).id));
           toast({
             title: "Account created!",
             description: "You're now logged in.",

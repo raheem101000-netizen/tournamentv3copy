@@ -52,6 +52,7 @@ export default function Login() {
       return res;
     },
     onSuccess: async (data) => {
+      mixpanel.identify(String(data.user?.id));
       mixpanel.track("Login");
       // Clear the user query cache to ensure the next fetch gets the fresh session
       queryClient.setQueryData(['/api/auth/me'], data.user);
