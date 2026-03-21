@@ -1,4 +1,5 @@
 import { useLocation } from "wouter";
+import mixpanel from "@/lib/mixpanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -51,6 +52,7 @@ export default function Login() {
       return res;
     },
     onSuccess: async (data) => {
+      mixpanel.track("Login");
       // Clear the user query cache to ensure the next fetch gets the fresh session
       queryClient.setQueryData(['/api/auth/me'], data.user);
 

@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
+import mixpanel from "@/lib/mixpanel";
 import TournamentCard from "@/components/TournamentCard";
 import CreateTournamentDialog from "@/components/CreateTournamentDialog";
 import BracketView from "@/components/BracketView";
@@ -1797,6 +1798,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
           matchId={selectedMatchId}
           onSelectWinner={async (winnerId) => {
             await apiRequest("POST", `/api/matches/${selectedMatchId}/winner`, { winnerId });
+            mixpanel.track("Match Completed");
             queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/matches`] });
             queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/teams`] });
           }}

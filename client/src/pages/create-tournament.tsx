@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Trophy, ChevronRight, ChevronLeft } from "lucide-react";
+import mixpanel from "@/lib/mixpanel";
 
 const createTournamentSchema = z.object({
   name: z.string().min(1, "Tournament name is required"),
@@ -73,6 +74,7 @@ export default function CreateTournament() {
       return res;
     },
     onSuccess: async (data: any) => {
+      mixpanel.track("Tournament Created");
       toast({
         title: "Success!",
         description: "Tournament created successfully",

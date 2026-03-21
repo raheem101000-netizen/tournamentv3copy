@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Loader2, CheckCircle, ArrowRight } from "lucide-react";
+import mixpanel from "@/lib/mixpanel";
 import { useLocation } from "wouter";
 import type { RegistrationStep, TeamProfile } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -94,6 +95,7 @@ export default function TournamentRegistrationForm({
       return res; // apiRequest already returns the parsed JSON data
     },
     onSuccess: async (registration: any) => {
+      mixpanel.track("Joined Tournament");
       if (serverId) {
         try {
           await apiRequest('POST', `/api/servers/${serverId}/join`);

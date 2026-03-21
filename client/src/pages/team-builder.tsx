@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Users, Plus, X } from "lucide-react";
+import mixpanel from "@/lib/mixpanel";
 import { Badge } from "@/components/ui/badge";
 
 const createTeamSchema = z.object({
@@ -58,6 +59,7 @@ export default function TeamBuilder() {
       return res;
     },
     onSuccess: async (teamProfile: any) => {
+      mixpanel.track("Team Created");
       // Create team members
       for (const member of members) {
         await apiRequest('POST', '/api/team-members', {

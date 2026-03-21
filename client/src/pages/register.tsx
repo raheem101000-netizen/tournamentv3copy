@@ -1,4 +1,5 @@
 import { useLocation } from "wouter";
+import mixpanel from "@/lib/mixpanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -121,6 +122,7 @@ export default function Register() {
       return res;
     },
     onSuccess: async () => {
+      mixpanel.track("Sign Up");
       const user = await refetchUser();
 
       if (user) {
