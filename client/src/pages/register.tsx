@@ -53,6 +53,7 @@ export default function Register() {
   const [debouncedUsername, setDebouncedUsername] = useState("");
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   // Debounce username input by 500ms
   useEffect(() => {
@@ -64,16 +65,32 @@ export default function Register() {
   useEffect(() => {
     if (debouncedUsername.length < 3) {
       setUsernameAvailable(null);
+      setSuggestions([]);
       return;
     }
     let cancelled = false;
     setIsCheckingUsername(true);
     fetch(`/api/users/check-username?username=${encodeURIComponent(debouncedUsername)}`)
       .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) {
-          setUsernameAvailable(data.available);
-          setIsCheckingUsername(false);
+      .then(async (data) => {
+        if (cancelled) return;
+        setUsernameAvailable(data.available);
+        setIsCheckingUsername(false);
+        if (data.available === false) {
+          const candidates = generateSuggestions(debouncedUsername);
+          const results = await Promise.all(
+            candidates.map((s) =>
+              fetch(`/api/users/check-username?username=${encodeURIComponent(s)}`)
+                .then((r) => r.json())
+                .then((d) => (d.available ? s : null))
+                .catch(() => null)
+            )
+          );
+          if (!cancelled) {
+            setSuggestions(results.filter((s): s is string => s !== null));
+          }
+        } else {
+          setSuggestions([]);
         }
       })
       .catch(() => {
@@ -136,10 +153,6 @@ export default function Register() {
     if (usernameAvailable === false) return;
     registerMutation.mutate(data);
   };
-
-  const suggestions = usernameAvailable === false && debouncedUsername.length >= 3
-    ? generateSuggestions(debouncedUsername)
-    : [];
 
   const inputClass = "flex-1 bg-white/90 text-black border-0 rounded-full h-9 text-sm px-4 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 transition-all duration-300 hover:bg-white focus:bg-white shadow-inner";
 
