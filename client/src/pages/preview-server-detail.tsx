@@ -209,19 +209,11 @@ export default function PreviewServerDetail() {
               canPost={isOwner || userPermissions?.permissions?.includes("manage_messages")}
             />
           ) : fullScreenChannel?.type === "tournament_dashboard" ? (
-            (isOwner || userPermissions?.permissions?.includes("tournament_dashboard_access")) ? (
-              <TournamentDashboardChannel
-                serverId={serverId!}
-                canManage={isOwner || userPermissions?.permissions?.includes("manage_tournaments")}
-                onViewModeChange={setIsChannelDetailView}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
-                <Lock className="w-8 h-8 text-muted-foreground" />
-                <p className="font-semibold">Access Restricted</p>
-                <p className="text-sm text-muted-foreground">Only the server owner or Tournament Manager can access the Tournament Dashboard.</p>
-              </div>
-            )
+            <TournamentDashboardChannel
+              serverId={serverId!}
+              canManage={isOwner || userPermissions?.permissions?.includes("manage_tournaments")}
+              onViewModeChange={setIsChannelDetailView}
+            />
           ) : (
             <ChatChannel channelId={fullScreenChannelId} isPreview={false} />
           )}
@@ -793,27 +785,11 @@ export default function PreviewServerDetail() {
                     <p className="text-muted-foreground text-center">Loading permissions...</p>
                   </CardContent>
                 </Card>
-              ) : (server?.ownerId === currentUserId ||
-                (!permissionsError && userPermissions?.permissions?.includes("tournament_dashboard_access"))) ? (
+              ) : (
                 <TournamentDashboardChannel
                   serverId={serverId!}
                   canManage={isOwner || userPermissions?.permissions?.includes("manage_tournaments")}
                 />
-              ) : (
-                <Card className="mt-8">
-                  <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <Lock className="w-5 h-5 text-muted-foreground" />
-                      <CardTitle>Access Restricted</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-muted-foreground">
-                      You don't have permission to access the Tournament Dashboard.
-                      Only the server owner or users with "Tournament Dashboard Access" permission can view this channel.
-                    </p>
-                  </CardContent>
-                </Card>
               )}
             </>
           )}
