@@ -4,7 +4,11 @@
       "Bash(npx tsc:*)",
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(xargs grep:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git config:*)",
+      "Bash(git remote:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
