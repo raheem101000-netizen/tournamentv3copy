@@ -108,16 +108,20 @@ export default function PreviewServerDetail() {
   // Use staleTime to avoid re-checking access on every window focus (common on mobile).
   // placeholderData: keep the last result while refetching so the "private" wall
   // doesn't flash during revalidation for channels the user already has access to.
+  // Tournament dashboard channels are NEVER subject to private channel checks.
+  // Only run the access query for non-tournament-dashboard private channels.
+  const isActiveTournamentDashboard = activeChannel?.type === 'tournament_dashboard';
+
   const { data: channelAccess, isLoading: channelAccessLoading } = useQuery<{ hasAccess: boolean }>({
     queryKey: [`/api/channels/${activePrivateChannelId}/access`],
-    enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate),
-    staleTime: 60000,        // Access decisions are stable; don't re-check every focus
-    refetchOnWindowFocus: false, // Prevents remounting ChatChannel on mobile focus events
+    enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate) && !isActiveTournamentDashboard,
+    staleTime: 60000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: channelMembersData = [], refetch: refetchChannelMembers } = useQuery<{ id: string; userId: string; username: string; avatarUrl: string | null; addedAt: Date }[]>({
     queryKey: [`/api/channels/${activePrivateChannelId}/members`],
-    enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate) && canManageChannels,
+    enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate) && canManageChannels && !isActiveTournamentDashboard,
   });
 
   const addChannelMemberMutation = useMutation({
@@ -214,10 +218,9 @@ export default function PreviewServerDetail() {
   // Full-screen channel view (iOS Messages style)
   if (fullScreenChannelId) {
     const fullScreenChannel = channels.find(c => c.id === fullScreenChannelId);
-    const isPrivateChannel = !!fullScreenChannel?.isPrivate;
-    // During initial load (channelAccessLoading=true, channelAccess=undefined),
-    // default to true so we don't flash "This channel is private" for users who DO
-    // have access. The backend will block them if they actually don't have access.
+    // Tournament dashboard is NEVER private — exempt it from all access checks
+    const isTournamentDashboard = fullScreenChannel?.type === 'tournament_dashboard';
+    const isPrivateChannel = !!fullScreenChannel?.isPrivate && !isTournamentDashboard;
     const hasAccess = !isPrivateChannel || channelAccess?.hasAccess !== false;
 
     // Private channel member IDs for quick lookup

@@ -5398,6 +5398,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function canAccessChannel(channelId: string, userId: string): Promise<boolean> {
     const channel = await storage.getChannel(channelId);
     if (!channel) return false;
+    // Tournament dashboard is ALWAYS accessible to everyone — never restrict it
+    if (channel.type === 'tournament_dashboard') return true;
     if (!channel.isPrivate) return true; // public channels: always accessible
 
     // Get server to check ownership
