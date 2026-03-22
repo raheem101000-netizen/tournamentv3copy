@@ -86,6 +86,7 @@ import {
   insertTeamMemberSchema,
   insertServerMemberSchema,
   leaguePairTracker,
+  insertSupportTicketSchema,
 } from "../shared/schema.js";
 import { z } from "zod";
 import {
@@ -6748,6 +6749,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         respondedAt: new Date(),
       });
       res.json(message);
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Support ticket routes
+  app.post("/api/support-tickets", async (req, res) => {
+    try {
+      const parsed = insertSupportTicketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid data", details: parsed.error.errors });
+      }
+      const ticket = await storage.createSupportTicket(parsed.data);
+      res.status(201).json(ticket);
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/support-tickets", requireAdmin, async (req, res) => {
+    try {
+      const tickets = await storage.getAllSupportTickets();
+      res.json(tickets);
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/support-tickets/:id", requireAdmin, async (req, res) => {
+    try {
+      const ticket = await storage.markSupportTicketRead(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+      res.json(ticket);
     } catch (error: any) {
       logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
       res.status(500).json({ error: error.message });

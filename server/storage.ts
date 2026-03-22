@@ -96,6 +96,9 @@ import {
   type GroupParticipant,
   type InsertGroupParticipant,
   channelMembers,
+  supportTickets,
+  type SupportTicket,
+  type InsertSupportTicket,
 } from "../shared/schema.js";
 
 export interface IStorage {
@@ -335,6 +338,11 @@ export interface IStorage {
   isGroupAdmin(threadId: string, userId: string): Promise<boolean>;
   updateGroupThread(threadId: string, updates: { groupName?: string; groupIconUrl?: string }): Promise<MessageThread | undefined>;
   addGroupParticipants(threadId: string, userIds: string[]): Promise<void>;
+
+  // Support ticket operations
+  createSupportTicket(data: InsertSupportTicket): Promise<SupportTicket>;
+  getAllSupportTickets(): Promise<SupportTicket[]>;
+  markSupportTicketRead(id: string): Promise<SupportTicket | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2126,6 +2134,25 @@ export class DatabaseStorage implements IStorage {
         });
       }
     }
+  }
+
+  // Support ticket operations
+  async createSupportTicket(data: InsertSupportTicket): Promise<SupportTicket> {
+    const [ticket] = await db.insert(supportTickets).values(data).returning();
+    return ticket;
+  }
+
+  async getAllSupportTickets(): Promise<SupportTicket[]> {
+    return await db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async markSupportTicketRead(id: string): Promise<SupportTicket | undefined> {
+    const [ticket] = await db
+      .update(supportTickets)
+      .set({ status: "read" })
+      .where(eq(supportTickets.id, id))
+      .returning();
+    return ticket || undefined;
   }
 }
 

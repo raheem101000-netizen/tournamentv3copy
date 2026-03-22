@@ -1,9 +1,11 @@
-import { Home, Compass, MessageCircle, Server, User } from "lucide-react";
+import { Home, Compass, MessageCircle, Server, User, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { FEATURE_MESSAGES_ENABLED } from "@/config/features";
+import { useState } from "react";
+import { ContactSupportModal } from "./ContactSupportModal";
 
 const baseNavItems = [
   { path: "/", icon: Home, label: "Home" },
@@ -15,6 +17,7 @@ const baseNavItems = [
 export function BottomNavigation() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const [supportOpen, setSupportOpen] = useState(false);
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/message-threads/unread-count"],
@@ -35,6 +38,8 @@ export function BottomNavigation() {
   const unreadCount = unreadData?.count || 0;
 
   return (
+    <>
+    <ContactSupportModal open={supportOpen} onClose={() => setSupportOpen(false)} />
     <nav className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up">
       {/* Glass container with floating effect */}
       <div className="mx-4 mb-4 rounded-2xl glass-heavy border-white/10 shadow-lg shadow-black/5 overflow-hidden">
@@ -88,8 +93,23 @@ export function BottomNavigation() {
               </Link>
             );
           })}
+
+          {/* Contact Support button */}
+          <button
+            onClick={() => setSupportOpen(true)}
+            className="flex flex-col items-center justify-center flex-1 h-full gap-1 transition-all duration-300 relative group"
+            data-testid="nav-contact-support"
+          >
+            <div className="relative z-10 transition-transform duration-300 group-hover:-translate-y-1 group-active:scale-95">
+              <HelpCircle className="w-5 h-5 text-muted-foreground group-hover:text-primary/80 transition-all duration-300" />
+            </div>
+            <span className="text-[10px] font-medium text-muted-foreground translate-y-1 opacity-70 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+              Support
+            </span>
+          </button>
         </div>
       </div>
     </nav>
+    </>
   );
 }

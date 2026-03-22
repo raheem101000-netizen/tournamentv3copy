@@ -780,3 +780,26 @@ export const insertSavedTournamentSchema = createInsertSchema(savedTournaments).
 
 export type InsertSavedTournament = z.infer<typeof insertSavedTournamentSchema>;
 export type SavedTournament = typeof savedTournaments.$inferSelect;
+
+// Support Tickets — submitted via the public Contact Support form
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  platformUsername: text("platform_username"),   // auto-filled if user is logged in
+  email: text("email").notNull(),
+  discordUsername: text("discord_username"),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  status: text("status", { enum: ["new", "read"] }).default("new").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_support_tickets_status").on(table.status),
+  index("idx_support_tickets_created_at").on(table.createdAt),
+]);
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;

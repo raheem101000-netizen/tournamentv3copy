@@ -26,7 +26,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { User, Tournament, Achievement, Report, CustomerServiceMessage, Server as ServerType } from "@shared/schema";
+import type { User, Tournament, Achievement, Report, CustomerServiceMessage, Server as ServerType, SupportTicket } from "@shared/schema";
 
 export default function AdminPanel() {
   const [, setLocation] = useLocation();
@@ -82,6 +82,10 @@ export default function AdminPanel() {
 
   const { data: customerServiceMessages } = useQuery<CustomerServiceMessage[]>({
     queryKey: ["/api/admin/customer-service-messages"],
+  });
+
+  const { data: supportTickets } = useQuery<SupportTicket[]>({
+    queryKey: ["/api/admin/support-tickets"],
   });
 
   const { data: achievements } = useQuery<(Achievement & { username?: string })[]>({
@@ -332,6 +336,15 @@ export default function AdminPanel() {
     },
   });
 
+  const markTicketReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("PATCH", `/api/admin/support-tickets/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/support-tickets"] });
+    },
+  });
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -362,13 +375,19 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container max-w-7xl mx-auto px-4 py-6">
         <Tabs defaultValue="achievements" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
             <TabsTrigger value="servers">Servers</TabsTrigger>
             <TabsTrigger value="achievements">Achievements</TabsTrigger>
             <TabsTrigger value="reports">Reports</TabsTrigger>
             <TabsTrigger value="customer-service">Support</TabsTrigger>
+            <TabsTrigger value="support-tickets" className="relative">
+              Tickets
+              {supportTickets?.some((t) => t.status === "new") && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* Achievements Tab */}
@@ -901,6 +920,52 @@ export default function AdminPanel() {
                           <p>{msg.response}</p>
                         </div>
                       )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Support Tickets Tab */}
+          <TabsContent value="support-tickets" className="space-y-6 mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Support Tickets</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Messages submitted via Contact Support. Contact users externally via email or Discord.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {!supportTickets?.length && (
+                    <p className="text-sm text-muted-foreground text-center py-8">No support tickets yet.</p>
+                  )}
+                  {supportTickets?.map((ticket) => (
+                    <div
+                      key={ticket.id}
+                      className={`p-4 border rounded-lg space-y-2 cursor-pointer hover:bg-muted/30 transition-colors ${ticket.status === "new" ? "border-primary/40 bg-primary/5" : ""}`}
+                      onClick={() => {
+                        if (ticket.status === "new") markTicketReadMutation.mutate(ticket.id);
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          {ticket.status === "new" && (
+                            <span className="text-[10px] font-bold uppercase bg-primary text-primary-foreground px-1.5 py-0.5 rounded">New</span>
+                          )}
+                          <p className="font-semibold text-sm">{ticket.subject}</p>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(ticket.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-0.5">
+                        {ticket.platformUsername && <p>Platform: <span className="text-foreground">{ticket.platformUsername}</span></p>}
+                        <p>Email: <span className="text-foreground">{ticket.email}</span></p>
+                        {ticket.discordUsername && <p>Discord: <span className="text-foreground">{ticket.discordUsername}</span></p>}
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap">{ticket.message}</p>
                     </div>
                   ))}
                 </div>
