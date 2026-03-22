@@ -4851,6 +4851,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         explicitPermissions: z.array(z.string()).optional(),
       });
       const validatedData = updateSchema.parse(req.body);
+
+      // Role hierarchy: only Owner can assign or remove the Admin role
+      if (validatedData.role !== undefined) {
+        const targetMember = await storage.getServerMemberByUserId(req.params.serverId, req.params.userId);
+        const targetCurrentRole = targetMember?.role || "Member";
+        if (!isOwner && (validatedData.role === "Admin" || targetCurrentRole === "Admin")) {
+          return res.status(403).json({ error: "Only the server owner can assign or remove the Admin role" });
+        }
+      }
+
       const member = await storage.updateServerMember(
         req.params.serverId,
         req.params.userId,
@@ -4873,16 +4883,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.params.userId
       );
       res.json({ permissions: effectivePermissions });
-    } catch (error: any) {
-      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.delete("/api/servers/:serverId/members/:userId", async (req, res) => {
-    try {
-      await storage.deleteMemberFromServer(req.params.serverId, req.params.userId);
-      res.status(204).send();
     } catch (error: any) {
       logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
       res.status(500).json({ error: error.message });

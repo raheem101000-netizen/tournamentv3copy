@@ -639,6 +639,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async joinServer(serverId: string, userId: string): Promise<ServerMember> {
+    // Upsert: return existing record if the user is already a member
+    const existing = await this.getServerMember(serverId, userId);
+    if (existing) return existing;
+
     const [member] = await db.insert(serverMembers).values({
       serverId,
       userId,
@@ -654,7 +658,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getServersByUser(userId: string): Promise<Server[]> {
-    return await db
+    const rows = await db
       .select({
         id: servers.id,
         name: servers.name,
@@ -673,6 +677,10 @@ export class DatabaseStorage implements IStorage {
       .from(servers)
       .innerJoin(serverMembers, eq(servers.id, serverMembers.serverId))
       .where(eq(serverMembers.userId, userId));
+
+    // Deduplicate by server ID in case of duplicate member records
+    const seen = new Set<string>();
+    return rows.filter(s => !seen.has(s.id) && !!seen.add(s.id));
   }
 
   async isUserInServer(serverId: string, userId: string): Promise<boolean> {
@@ -1299,10 +1307,18 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(serverMembers.userId, users.id))
       .where(eq(serverMembers.serverId, serverId));
 
-    return rows.map((row) => ({
-      ...row.member,
-      user: row.user as User, // Cast partial user to User (safe for this usage)
-    }));
+    // Deduplicate by userId — keep only the first (earliest) record per user
+    const seen = new Set<string>();
+    return rows
+      .filter((row) => {
+        if (seen.has(row.member.userId)) return false;
+        seen.add(row.member.userId);
+        return true;
+      })
+      .map((row) => ({
+        ...row.member,
+        user: row.user as User, // Cast partial user to User (safe for this usage)
+      }));
   }
 
   async getServerMemberByUserId(serverId: string, userId: string): Promise<ServerMember | undefined> {

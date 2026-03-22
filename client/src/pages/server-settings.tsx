@@ -711,7 +711,7 @@ export default function ServerSettings() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Member">Member</SelectItem>
+                              <SelectItem value="Member">No Role (Member)</SelectItem>
                               {isOwner && <SelectItem value="Admin">Admin</SelectItem>}
                               <SelectItem value="Tournament Manager">Tournament Manager</SelectItem>
                             </SelectContent>
