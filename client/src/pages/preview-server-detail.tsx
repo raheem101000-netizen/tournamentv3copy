@@ -189,16 +189,7 @@ export default function PreviewServerDetail() {
 
           <span className="font-semibold text-lg">{fullScreenChannel?.name || 'Chat'}</span>
 
-          {(isOwner || userPermissions?.permissions?.includes("manage_channels")) && !isChannelDetailView ? (
-            <button
-              className="text-blue-500 text-lg font-normal min-w-[60px] text-right"
-              onClick={() => setChannelSettingsOpen(true)}
-            >
-              Tournament Settings
-            </button>
-          ) : (
-            <div className="min-w-[60px]" /> /* Spacer to keep title centered */
-          )}
+          <div className="min-w-[60px]" />
         </div>
 
         {/* Chat Area */}

@@ -1661,22 +1661,12 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   return (
     <div className="space-y-6 h-full overflow-y-auto pb-8 px-4 sm:px-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Trophy className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Tournament Dashboard</h2>
-        </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           {canManage && (
-            <>
-              <Button onClick={() => setIsAwardAchievementDialogOpen(true)} variant="outline" className="w-full md:w-auto" data-testid="button-award-achievement">
-                <Trophy className="h-4 w-4 mr-2" />
-                Award Achievement
-              </Button>
-              <Button onClick={() => setIsCreateDialogOpen(true)} className="w-full md:w-auto" data-testid="button-create-tournament">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Tournament
-              </Button>
-            </>
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="w-full md:w-auto" data-testid="button-create-tournament">
+              <Plus className="h-4 w-4 mr-2" />
+              Create Tournament
+            </Button>
           )}
         </div>
       </div>
