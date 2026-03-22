@@ -627,7 +627,8 @@ export default function ServerSettings() {
                       <Badge style={{ backgroundColor: "#5865F2", color: "white" }}>Admin</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Can manage server settings, members, and roles. Can assign Tournament Manager to members.
+                      Can ban members, post announcements, edit server description, and manage general server communication.
+                      Cannot assign roles. Cannot access the tournament dashboard unless also given Tournament Manager.
                       Assigned and removed by the Owner only.
                     </p>
                   </div>
@@ -636,8 +637,8 @@ export default function ServerSettings() {
                       <Badge style={{ backgroundColor: "#57F287", color: "#000" }}>Tournament Manager</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Has access to the tournament dashboard. Can create and manage tournaments within the server.
-                      Assigned and removed by the Owner or Admin.
+                      Can access and manage the tournament dashboard. Can create and manage tournaments within the server.
+                      Assigned and removed by the Owner only. A member can hold both Admin and Tournament Manager at the same time.
                     </p>
                   </div>
                 </div>
@@ -689,11 +690,11 @@ export default function ServerSettings() {
                                 {member.displayName || member.username || member.userId}
                               </p>
                               {member.isOwner && <Crown className="w-4 h-4 text-yellow-500 flex-shrink-0" />}
-                              {!member.isOwner && member.role === "Admin" && (
+                              {!member.isOwner && (member.role === "Admin" || member.role === "Admin+Tournament Manager") && (
                                 <Badge style={{ backgroundColor: "#5865F2", color: "white" }} className="text-xs">Admin</Badge>
                               )}
-                              {!member.isOwner && member.role === "Tournament Manager" && (
-                                <Badge style={{ backgroundColor: "#57F287", color: "#000" }} className="text-xs">Tournament Manager</Badge>
+                              {!member.isOwner && (member.role === "Tournament Manager" || member.role === "Admin+Tournament Manager") && (
+                                <Badge style={{ backgroundColor: "#57F287", color: "#000" }} className="text-xs">TM</Badge>
                               )}
                             </div>
                             {member.username && member.displayName && (
@@ -701,19 +702,20 @@ export default function ServerSettings() {
                             )}
                           </div>
                         </div>
-                        {!member.isOwner && (
+                        {!member.isOwner && isOwner && (
                           <Select
                             value={member.role || "Member"}
                             onValueChange={(role) => assignRoleMutation.mutate({ userId: member.userId, role })}
                             disabled={assignRoleMutation.isPending}
                           >
-                            <SelectTrigger className="w-48 flex-shrink-0" data-testid={`select-role-${member.userId}`}>
+                            <SelectTrigger className="w-56 flex-shrink-0" data-testid={`select-role-${member.userId}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Member">No Role (Member)</SelectItem>
-                              {isOwner && <SelectItem value="Admin">Admin</SelectItem>}
+                              <SelectItem value="Admin">Admin</SelectItem>
                               <SelectItem value="Tournament Manager">Tournament Manager</SelectItem>
+                              <SelectItem value="Admin+Tournament Manager">Admin + Tournament Manager</SelectItem>
                             </SelectContent>
                           </Select>
                         )}

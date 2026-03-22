@@ -4833,15 +4833,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const isOwner = server.ownerId === req.session.userId;
-      const requesterPermissions = await storage.getEffectivePermissions(
-        req.params.serverId,
-        req.session.userId
-      );
-      const canManageRoles = requesterPermissions.includes("manage_roles") ||
-        requesterPermissions.includes("manage_server");
 
-      if (!isOwner && !canManageRoles) {
-        return res.status(403).json({ error: "Forbidden: Only server owners or users with manage_roles permission can update member permissions" });
+      // Only the server Owner can assign or change roles
+      if (!isOwner) {
+        return res.status(403).json({ error: "Only the server owner can assign roles to members" });
       }
 
       const updateSchema = z.object({
@@ -4851,15 +4846,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         explicitPermissions: z.array(z.string()).optional(),
       });
       const validatedData = updateSchema.parse(req.body);
-
-      // Role hierarchy: only Owner can assign or remove the Admin role
-      if (validatedData.role !== undefined) {
-        const targetMember = await storage.getServerMemberByUserId(req.params.serverId, req.params.userId);
-        const targetCurrentRole = targetMember?.role || "Member";
-        if (!isOwner && (validatedData.role === "Admin" || targetCurrentRole === "Admin")) {
-          return res.status(403).json({ error: "Only the server owner can assign or remove the Admin role" });
-        }
-      }
 
       const member = await storage.updateServerMember(
         req.params.serverId,
