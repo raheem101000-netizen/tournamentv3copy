@@ -77,6 +77,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   const [isAwardAchievementDialogOpen, setIsAwardAchievementDialogOpen] = useState(false);
   const [isCreateMatchDialogOpen, setIsCreateMatchDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isEndTournamentDialogOpen, setIsEndTournamentDialogOpen] = useState(false);
   const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [selectedTeam1Id, setSelectedTeam1Id] = useState<string | null>(null);
@@ -189,6 +190,26 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  const setTournamentStatusMutation = useMutation({
+    mutationFn: async ({ tournamentId, status }: { tournamentId: string; status: string }) => {
+      return apiRequest('PATCH', `/api/tournaments/${tournamentId}`, { status });
+    },
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tournaments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/servers/${serverId}/tournaments`] });
+      toast({
+        title: variables.status === 'completed' ? "Tournament ended" : "Tournament reopened",
+        description: variables.status === 'completed'
+          ? "The tournament has been marked as completed."
+          : "The tournament has been reopened.",
+      });
+      setIsEndTournamentDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -669,6 +690,15 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             {/* Organizer controls */}
             {isOrganizer && (
               <>
+                {selectedTournament.status === 'completed' ? (
+                  <Button variant="outline" onClick={() => setTournamentStatusMutation.mutate({ tournamentId: selectedTournamentId!, status: 'upcoming' })} disabled={setTournamentStatusMutation.isPending} data-testid="button-reopen-tournament">
+                    Reopen Tournament
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={() => setIsEndTournamentDialogOpen(true)} data-testid="button-end-tournament">
+                    End Tournament
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setIsAwardAchievementDialogOpen(true)} data-testid="button-award-achievement-detail">
                   <Trophy className="h-4 w-4 mr-2" />
                   Award
@@ -1653,6 +1683,30 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
           isPending={awardAchievementMutation.isPending}
           tournamentId={selectedTournamentId}
         />
+
+        <Dialog open={isEndTournamentDialogOpen} onOpenChange={setIsEndTournamentDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>End Tournament?</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to end this tournament? This will mark it as completed.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-2 justify-end mt-2">
+              <Button variant="outline" onClick={() => setIsEndTournamentDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="default"
+                onClick={() => setTournamentStatusMutation.mutate({ tournamentId: selectedTournamentId!, status: 'completed' })}
+                disabled={setTournamentStatusMutation.isPending}
+                data-testid="button-confirm-end-tournament"
+              >
+                {setTournamentStatusMutation.isPending ? "Ending..." : "End Tournament"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div >
     );
   }
