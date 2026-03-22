@@ -464,15 +464,7 @@ export function MessagesListView({ onSelectChat }: MessagesListViewProps) {
                                             <span className="text-xs text-zinc-500 font-medium px-2">Pending</span>
                                         ) : user.friendshipStatus === 'pending_received' ? (
                                             <span className="text-xs text-blue-400 font-medium px-2">Request Received</span>
-                                        ) : (
-                                            <button
-                                                onClick={() => addFriendMutation.mutate(user.id)}
-                                                disabled={addFriendMutation.isPending}
-                                                className="text-xs bg-zinc-700 text-white px-3 py-1.5 rounded-full hover:bg-zinc-600 transition-colors disabled:opacity-50"
-                                            >
-                                                {addFriendMutation.isPending ? 'Adding...' : 'Add Friend'}
-                                            </button>
-                                        )}
+                                        ) : null}
                                     </div>
                                 ))}
                                 {searchQuery.length >= 2 && searchResults?.length === 0 && (

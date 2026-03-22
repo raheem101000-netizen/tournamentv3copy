@@ -405,10 +405,6 @@ export default function PreviewAccount() {
                   </Button>
                 ) : (
                   <div className="flex gap-2 w-full">
-                    <Button variant="default" className="flex-1" data-testid="button-add-friend">
-                      <Users className="w-4 h-4 mr-2" />
-                      Add Friend
-                    </Button>
                     {FEATURE_MESSAGES_ENABLED && (
                       <Button variant="outline" className="flex-1" data-testid="button-message">
                         Message

@@ -200,12 +200,7 @@ export default function UserProfileModal({ userId, open, onOpenChange }: UserPro
       );
     }
 
-    return (
-      <Button onClick={handleAddFriend} variant="outline" className="flex-1" data-testid="button-add-friend-profile">
-        <UserPlus className="w-4 h-4 mr-2" />
-        Add Friend
-      </Button>
-    );
+    return null;
   };
 
   const handleMessageProfile = async () => {

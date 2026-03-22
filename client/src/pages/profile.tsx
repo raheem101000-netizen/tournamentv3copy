@@ -189,24 +189,6 @@ export default function Profile() {
                     Message
                   </Button>
                 )}
-                <Button
-                  onClick={handleAddFriend}
-                  disabled={isFriendRequestSent}
-                  variant={isFriendRequestSent ? "secondary" : "outline"}
-                  className="flex-1 md:flex-none glass border-primary/20 hover:bg-primary/5"
-                >
-                  {isFriendRequestSent ? (
-                    <>
-                      <UserCheck className="w-4 h-4 mr-2" />
-                      Requested
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-4 h-4 mr-2" />
-                      Add Friend
-                    </>
-                  )}
-                </Button>
               </div>
             )}
           </div>
