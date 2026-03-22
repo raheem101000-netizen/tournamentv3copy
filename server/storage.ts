@@ -675,8 +675,13 @@ export class DatabaseStorage implements IStorage {
         createdAt: servers.createdAt
       })
       .from(servers)
-      .innerJoin(serverMembers, eq(servers.id, serverMembers.serverId))
-      .where(eq(serverMembers.userId, userId));
+      .leftJoin(serverMembers, eq(servers.id, serverMembers.serverId))
+      .where(
+        or(
+          eq(serverMembers.userId, userId),
+          eq(servers.ownerId, userId)
+        )
+      );
 
     // Deduplicate by server ID in case of duplicate member records
     const seen = new Set<string>();

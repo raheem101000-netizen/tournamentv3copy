@@ -3879,7 +3879,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ownerId: req.session.userId,
       });
 
-      // Create default channels for the server - announcements first
+      // Add the owner as a member first — must always succeed before anything else
+      await storage.joinServer(server.id, req.session.userId);
+
+      // Create default channels (non-fatal — channel errors must not orphan the server)
       const defaultChannels = [
         { name: "announcements", slug: "announcements", type: "announcements", icon: "📢", serverId: server.id, position: 0 },
         { name: "tournament-dashboard", slug: "tournament-dashboard", type: "tournament_dashboard", icon: "🏆", serverId: server.id, position: 1, isPrivate: 1 },
@@ -3887,11 +3890,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ];
 
       for (const channelData of defaultChannels) {
-        await storage.createChannel(channelData);
+        try {
+          await storage.createChannel(channelData);
+        } catch (channelError: any) {
+          log('WARN', 'Failed to create default channel', { channel: channelData.name, serverId: server.id, error: channelError.message });
+        }
       }
-
-      // Add the owner as a member of the server
-      await storage.joinServer(server.id, req.session.userId);
 
       cache.delete(CACHE_KEYS.SERVERS_LIST);
       log('INFO', 'Server created', { serverId: server.id, serverName: server.name });
