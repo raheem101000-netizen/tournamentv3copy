@@ -1946,12 +1946,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/matches/:id", async (req, res) => {
     try {
       log('INFO', 'Match update attempt', { matchId: req.params.id });
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       const currentMatch = await storage.getMatch(req.params.id);
       if (!currentMatch) {
         log('WARN', 'Match not found', { matchId: req.params.id });
         endTrace('ERROR');
         await flush();
         return res.status(404).json({ error: "Match not found" });
+      }
+
+      // Permission check: organizer, server owner, or Tournament Manager
+      if (currentMatch.tournamentId) {
+        const tournament = await storage.getTournament(currentMatch.tournamentId);
+        if (tournament) {
+          let canManage = tournament.organizerId === req.session.userId;
+          if (!canManage && tournament.serverId) {
+            const server = await storage.getServer(tournament.serverId);
+            if (server?.ownerId === req.session.userId) canManage = true;
+            if (!canManage) {
+              const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId);
+              if (perms.includes("manage_tournaments")) canManage = true;
+            }
+          }
+          if (!canManage) {
+            return res.status(403).json({ error: "You do not have permission to update this match" });
+          }
+        }
       }
 
       if (req.body.winnerId) {
@@ -2308,6 +2330,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { winnerId } = req.body;
       log('INFO', 'Match winner selection', { matchId: req.params.matchId, winnerId });
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       const match = await storage.getMatch(req.params.matchId);
 
       if (!match) {
@@ -2315,6 +2340,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         endTrace('ERROR');
         await flush();
         return res.status(404).json({ error: "Match not found" });
+      }
+
+      // Permission check: organizer, server owner, or Tournament Manager
+      if (match.tournamentId) {
+        const tournament = await storage.getTournament(match.tournamentId);
+        if (tournament) {
+          let canManage = tournament.organizerId === req.session.userId;
+          if (!canManage && tournament.serverId) {
+            const server = await storage.getServer(tournament.serverId);
+            if (server?.ownerId === req.session.userId) canManage = true;
+            if (!canManage) {
+              const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId);
+              if (perms.includes("manage_tournaments")) canManage = true;
+            }
+          }
+          if (!canManage) {
+            return res.status(403).json({ error: "You do not have permission to select the winner" });
+          }
+        }
       }
 
       if (!winnerId) {
@@ -2440,11 +2484,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/matches/:matchId/winner", async (req, res) => {
     try {
       log('INFO', 'Reversing match winner', { matchId: req.params.matchId });
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       const match = await storage.getMatch(req.params.matchId);
 
       if (!match) {
         log('WARN', 'Match not found', { matchId: req.params.matchId });
         return res.status(404).json({ error: "Match not found" });
+      }
+
+      // Permission check: organizer, server owner, or Tournament Manager
+      if (match.tournamentId) {
+        const tournament = await storage.getTournament(match.tournamentId);
+        if (tournament) {
+          let canManage = tournament.organizerId === req.session.userId;
+          if (!canManage && tournament.serverId) {
+            const server = await storage.getServer(tournament.serverId);
+            if (server?.ownerId === req.session.userId) canManage = true;
+            if (!canManage) {
+              const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId);
+              if (perms.includes("manage_tournaments")) canManage = true;
+            }
+          }
+          if (!canManage) {
+            return res.status(403).json({ error: "You do not have permission to reverse this match result" });
+          }
+        }
       }
 
       if (!match.winnerId) {
@@ -2627,24 +2693,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Also check if user owns the server (for backwards compatibility when organizerId is null)
       let isServerOwner = false;
+      let hasTournamentManagerRole = false;
       if (tournament.serverId) {
         const server = await storage.getServer(tournament.serverId);
         isServerOwner = server?.ownerId === req.session.userId;
+        const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId);
+        hasTournamentManagerRole = perms.includes("manage_tournaments");
       }
-
-      // Debug logging for authorization issue
-      console.log('[GENERATE-FIXTURES] Auth check:', {
-        sessionUserId: req.session.userId,
-        tournamentOrganizerId: tournament.organizerId,
-        isMatch: tournament.organizerId === req.session.userId,
-        isAdmin: user?.isAdmin,
-        isServerOwner
-      });
 
       const isAuthorized =
         tournament.organizerId === req.session.userId ||
         user?.isAdmin ||
-        isServerOwner;
+        isServerOwner ||
+        hasTournamentManagerRole;
 
       if (!isAuthorized) {
         log('WARN', 'Generate fixtures - not authorized', {

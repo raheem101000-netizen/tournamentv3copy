@@ -512,13 +512,12 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     );
   })();
 
-  // Only admin, owner/organizer, or match participants can see match chat
-  const canAccessMatchChat = !!user?.isAdmin || user?.role === 'admin' ||
-    user?.id === selectedTournament?.organizerId || isServerOwner || isMatchParticipant;
-
   // Whether the current user is an organizer/admin (sees all matches)
-  const isOrganizer = !!user?.isAdmin || user?.role === 'admin' ||
+  const isOrganizer = canManage || !!user?.isAdmin || user?.role === 'admin' ||
     user?.id === selectedTournament?.organizerId || isServerOwner;
+
+  // Only admin, owner/organizer, or match participants can see match chat
+  const canAccessMatchChat = isOrganizer || isMatchParticipant;
 
   // For league/round_robin: participants see only their oldest unresolved match.
   // Organizers always see all matches. Applies only when selectedTournament is loaded.
@@ -668,7 +667,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
           </div>
           <div className="flex items-center gap-2">
             {/* Organizer controls */}
-            {(user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin') && (
+            {isOrganizer && (
               <>
                 <Button variant="outline" onClick={() => setIsAwardAchievementDialogOpen(true)} data-testid="button-award-achievement-detail">
                   <Trophy className="h-4 w-4 mr-2" />
@@ -698,7 +697,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             {canAccessMatchChat && (
               <TabsTrigger value="match-chat" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Match Chat</TabsTrigger>
             )}
-            {(user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin') && (
+            {isOrganizer && (
               <>
                 <TabsTrigger value="participants" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Create Match</TabsTrigger>
                 <TabsTrigger value="registrations" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Registrations</TabsTrigger>
@@ -797,7 +796,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                     No matches scheduled yet
                   </p>
                   {/* Knockout: one-time bracket initialisation */}
-                  {selectedTournament.format === 'single_elimination' && selectedTournamentTeams.length >= 2 && (user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
+                  {selectedTournament.format === 'single_elimination' && selectedTournamentTeams.length >= 2 && isOrganizer && (
                     <Button
                       onClick={() => {
                         apiRequest('POST', `/api/tournaments/${selectedTournamentId}/generate-fixtures`)
@@ -823,7 +822,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                     </Button>
                   )}
                   {/* Non-knockout: standard match generation */}
-                  {selectedTournament.format !== 'single_elimination' && selectedTournamentTeams.length >= 2 && (user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
+                  {selectedTournament.format !== 'single_elimination' && selectedTournamentTeams.length >= 2 && isOrganizer && (
                     <Button
                       onClick={() => {
                         apiRequest('POST', `/api/tournaments/${selectedTournamentId}/generate-fixtures`)
@@ -914,7 +913,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                     })()}
 
                     {/* Elimination Button */}
-                    {(user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
+                    {isOrganizer && (
                       <Button
                         variant="outline"
                         size="icon"
@@ -926,7 +925,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                     )}
 
                     {/* Reverse Win Button - only show if match has a winner */}
-                    {selectedMatch.winnerId && (user?.id === selectedTournament.organizerId || (user as any)?.isAdmin) && (
+                    {selectedMatch.winnerId && isOrganizer && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -944,7 +943,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                       </Button>
                     )}
 
-                    {(user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin') && (
+                    {isOrganizer && (
                       <Button
                         variant="destructive"
                         size="icon"
@@ -1019,7 +1018,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                         team2Name={`@${getUsernameByTeamId(selectedMatch.team2Id) || 'Player 2'}`}
                         team1Id={selectedMatch.team1Id || ''}
                         team2Id={selectedMatch.team2Id || ''}
-                        canManage={user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin'}
+                        canManage={isOrganizer}
                       />
                     )}
                   </div>
@@ -1099,7 +1098,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             {selectedTournamentTeams.length > 0 ? (
               <StandingsTable
                 teams={selectedTournamentTeams}
-                isEditable={user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin'}
+                isEditable={isOrganizer}
                 tournamentId={selectedTournament.id}
               />
             ) : (
@@ -1113,7 +1112,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
 
 
           <TabsContent value="registrations" className="w-full px-4 sm:px-6 py-4">
-            {(user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin') ? (
+            {isOrganizer ? (
               registrations.length > 0 ? (
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
@@ -1224,7 +1223,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
           </TabsContent>
 
           <TabsContent value="participants" className="w-full px-4 sm:px-6 py-4">
-            {(user?.id === selectedTournament.organizerId || isServerOwner || !!user?.isAdmin || user?.role === 'admin') ? (
+            {isOrganizer ? (
               registrations.filter(r => r.status === 'approved').length > 0 ? (
                 <div className="space-y-4">
                   {selectedTournament.format === 'single_elimination' && selectedTournamentMatches.filter((m: any) => m.matchType !== 'manual').length === 0 && (

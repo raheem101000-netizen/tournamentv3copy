@@ -534,7 +534,7 @@ export default function PreviewServerDetail() {
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             Channels
           </h3>
-          {(server.ownerId === currentUserId || (user as any)?.isAdmin) && (
+          {(isOwner || userPermissions?.permissions?.includes("manage_channels")) && (
             <div className="flex gap-1">
               <Button
                 size="icon"
