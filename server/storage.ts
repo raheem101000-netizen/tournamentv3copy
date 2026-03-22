@@ -95,6 +95,7 @@ import {
   groupParticipants,
   type GroupParticipant,
   type InsertGroupParticipant,
+  channelMembers,
 } from "../shared/schema.js";
 
 export interface IStorage {
@@ -169,6 +170,12 @@ export interface IStorage {
   getCategoriesByServer(serverId: string): Promise<ChannelCategory[]>;
   updateChannelCategory(id: string, data: Partial<ChannelCategory>): Promise<ChannelCategory | undefined>;
   deleteChannelCategory(id: string): Promise<void>;
+
+  // Channel member operations (private channels)
+  isChannelMember(channelId: string, userId: string): Promise<boolean>;
+  getChannelMembersWithUsers(channelId: string): Promise<{ id: string; userId: string; username: string; avatarUrl: string | null; addedAt: Date }[]>;
+  addChannelMember(channelId: string, userId: string): Promise<void>;
+  removeChannelMember(channelId: string, userId: string): Promise<void>;
 
   // Channel message operations
   createChannelMessage(data: InsertChannelMessage): Promise<ChannelMessage>;
@@ -1411,7 +1418,37 @@ export class DatabaseStorage implements IStorage {
 
   async deleteChannel(id: string): Promise<void> {
     await db.delete(channelMessages).where(eq(channelMessages.channelId, id));
+    await db.delete(channelMembers).where(eq(channelMembers.channelId, id));
     await db.delete(channels).where(eq(channels.id, id));
+  }
+
+  // Channel member operations (private channels)
+  async isChannelMember(channelId: string, userId: string): Promise<boolean> {
+    const [row] = await db.select().from(channelMembers)
+      .where(and(eq(channelMembers.channelId, channelId), eq(channelMembers.userId, userId)));
+    return !!row;
+  }
+
+  async getChannelMembersWithUsers(channelId: string): Promise<{ id: string; userId: string; username: string; avatarUrl: string | null; addedAt: Date }[]> {
+    const rows = await db.select({
+      id: channelMembers.id,
+      userId: channelMembers.userId,
+      username: users.username,
+      avatarUrl: users.avatarUrl,
+      addedAt: channelMembers.addedAt,
+    }).from(channelMembers)
+      .innerJoin(users, eq(channelMembers.userId, users.id))
+      .where(eq(channelMembers.channelId, channelId));
+    return rows;
+  }
+
+  async addChannelMember(channelId: string, userId: string): Promise<void> {
+    await db.insert(channelMembers).values({ channelId, userId }).onConflictDoNothing();
+  }
+
+  async removeChannelMember(channelId: string, userId: string): Promise<void> {
+    await db.delete(channelMembers)
+      .where(and(eq(channelMembers.channelId, channelId), eq(channelMembers.userId, userId)));
   }
 
   // Channel category operations

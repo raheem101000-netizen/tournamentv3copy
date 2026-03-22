@@ -318,6 +318,17 @@ export const channelMessages = pgTable("channel_messages", {
   index("idx_channel_messages_channel_id").on(table.channelId),
 ]);
 
+export const channelMembers = pgTable("channel_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_channel_members_channel_id").on(table.channelId),
+  index("idx_channel_members_user_id").on(table.userId),
+  unique("uq_channel_member").on(table.channelId, table.userId),
+]);
+
 export const messageThreads = pgTable("message_threads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id"),

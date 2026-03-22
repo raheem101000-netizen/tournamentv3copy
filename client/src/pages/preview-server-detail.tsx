@@ -46,6 +46,7 @@ export default function PreviewServerDetail() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
   const [isChannelDetailView, setIsChannelDetailView] = useState(false);
+  const [privateChannelMembersOpen, setPrivateChannelMembersOpen] = useState(false);
 
   const { user } = useAuth();
   const currentUserId = user?.id;
@@ -98,6 +99,41 @@ export default function PreviewServerDetail() {
   });
 
   const isOwner = server?.ownerId === currentUserId;
+  const canManageChannels = isOwner || (userPermissions?.permissions?.includes("manage_channels") ?? false);
+
+  // Active private channel access check
+  const activePrivateChannelId = fullScreenChannelId || selectedChannelId;
+  const activeChannel = channels.find(c => c.id === activePrivateChannelId);
+
+  const { data: channelAccess, isLoading: channelAccessLoading } = useQuery<{ hasAccess: boolean }>({
+    queryKey: [`/api/channels/${activePrivateChannelId}/access`],
+    enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate),
+  });
+
+  const { data: channelMembersData = [], refetch: refetchChannelMembers } = useQuery<{ id: string; userId: string; username: string; avatarUrl: string | null; addedAt: Date }[]>({
+    queryKey: [`/api/channels/${activePrivateChannelId}/members`],
+    enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate) && canManageChannels,
+  });
+
+  const addChannelMemberMutation = useMutation({
+    mutationFn: async ({ channelId, userId }: { channelId: string; userId: string }) => {
+      await apiRequest('POST', `/api/channels/${channelId}/members`, { userId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/channels/${activePrivateChannelId}/members`] });
+      refetchChannelMembers();
+    },
+  });
+
+  const removeChannelMemberMutation = useMutation({
+    mutationFn: async ({ channelId, userId }: { channelId: string; userId: string }) => {
+      await apiRequest('DELETE', `/api/channels/${channelId}/members/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/channels/${activePrivateChannelId}/members`] });
+      refetchChannelMembers();
+    },
+  });
 
   const leaveServerMutation = useMutation({
     mutationFn: async () => {
@@ -173,13 +209,18 @@ export default function PreviewServerDetail() {
   // Full-screen channel view (iOS Messages style)
   if (fullScreenChannelId) {
     const fullScreenChannel = channels.find(c => c.id === fullScreenChannelId);
+    const isPrivateChannel = !!fullScreenChannel?.isPrivate;
+    const hasAccess = !isPrivateChannel || (channelAccess?.hasAccess ?? false);
+
+    // Private channel member IDs for quick lookup
+    const channelMemberIds = new Set(channelMembersData.map(m => m.userId));
 
     return (
       <div className="fixed inset-0 z-40 flex flex-col bg-black text-white overflow-hidden supports-[height:100dvh]:h-[100dvh]">
         {/* Header - iOS Messages Style */}
         <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-black z-10">
           <button
-            onClick={() => setFullScreenChannelId(null)}
+            onClick={() => { setFullScreenChannelId(null); setPrivateChannelMembersOpen(false); }}
             className="text-blue-500 flex items-center gap-1 min-w-[60px]"
             aria-label="Back"
           >
@@ -187,14 +228,34 @@ export default function PreviewServerDetail() {
             <span className="text-lg">Back</span>
           </button>
 
-          <span className="font-semibold text-lg">{fullScreenChannel?.name || 'Chat'}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-lg">{fullScreenChannel?.name || 'Chat'}</span>
+            {isPrivateChannel && <Lock className="h-4 w-4 text-zinc-400" />}
+          </div>
 
-          <div className="min-w-[60px]" />
+          <div className="min-w-[60px] flex justify-end">
+            {isPrivateChannel && hasAccess && canManageChannels && (
+              <button
+                onClick={() => setPrivateChannelMembersOpen(true)}
+                className="text-blue-500 text-sm"
+              >
+                Members
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Chat Area */}
         <div className="flex-1 min-h-0">
-          {fullScreenChannel?.type === "announcements" ? (
+          {channelAccessLoading && isPrivateChannel ? (
+            <div className="flex items-center justify-center h-full text-zinc-400">Loading...</div>
+          ) : !hasAccess ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
+              <Lock className="h-12 w-12 text-zinc-600" />
+              <p className="text-zinc-300 font-semibold text-lg">This channel is private</p>
+              <p className="text-zinc-500 text-sm">You need to be invited to access this channel.</p>
+            </div>
+          ) : fullScreenChannel?.type === "announcements" ? (
             <AnnouncementsChannel
               channelId={fullScreenChannelId}
               canPost={isOwner || userPermissions?.permissions?.includes("manage_messages")}
@@ -218,6 +279,73 @@ export default function PreviewServerDetail() {
           onOpenChange={setChannelSettingsOpen}
           onDeleted={() => setFullScreenChannelId(null)}
         />
+
+        {/* Private Channel Members Sheet */}
+        <Sheet open={privateChannelMembersOpen} onOpenChange={setPrivateChannelMembersOpen}>
+          <SheetContent side="right" className="w-[300px] sm:w-[350px] bg-zinc-900 text-white border-zinc-800">
+            <SheetHeader className="pb-4 border-b border-zinc-800">
+              <SheetTitle className="text-white flex items-center gap-2">
+                <Lock className="h-4 w-4" />
+                Channel Members
+              </SheetTitle>
+            </SheetHeader>
+            <ScrollArea className="h-[calc(100vh-120px)] mt-4">
+              <div className="space-y-4">
+                {/* Current channel members */}
+                {channelMembersData.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">In channel ({channelMembersData.length})</p>
+                    <div className="space-y-1">
+                      {channelMembersData.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between gap-2 py-2">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="w-7 h-7">
+                              {m.avatarUrl && <AvatarImage src={m.avatarUrl} />}
+                              <AvatarFallback className="bg-zinc-700 text-xs">{m.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">{m.username}</span>
+                          </div>
+                          <button
+                            onClick={() => removeChannelMemberMutation.mutate({ channelId: fullScreenChannelId, userId: m.userId })}
+                            className="text-red-400 text-xs hover:text-red-300"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add members from server */}
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Add Members</p>
+                  <div className="space-y-1">
+                    {members
+                      .filter(m => !channelMemberIds.has(m.userId) && m.userId !== currentUserId && m.userId !== server?.ownerId)
+                      .map((m) => (
+                        <div key={m.id} className="flex items-center justify-between gap-2 py-2">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="w-7 h-7">
+                              {m.avatarUrl && <AvatarImage src={m.avatarUrl} />}
+                              <AvatarFallback className="bg-zinc-700 text-xs">{m.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">{m.username}</span>
+                          </div>
+                          <button
+                            onClick={() => addChannelMemberMutation.mutate({ channelId: fullScreenChannelId, userId: m.userId })}
+                            className="text-blue-400 text-xs hover:text-blue-300"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
       </div>
     );
   }
@@ -618,8 +746,8 @@ export default function PreviewServerDetail() {
         })()}
       </div>
 
-      {/* Private Channels (owner only) */}
-      {privateChannels.length > 0 && server.ownerId === currentUserId && (
+      {/* Private Channels (visible to all server members, accessible only to invited) */}
+      {privateChannels.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 px-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
@@ -791,7 +919,21 @@ export default function PreviewServerDetail() {
             />
           )}
           {selectedChannel.type === "chat" && (
-            <ChatChannel channelId={selectedChannel.id} />
+            selectedChannel.isPrivate && !channelAccess?.hasAccess ? (
+              channelAccessLoading ? (
+                <Card className="mt-8"><CardContent className="py-8 text-center text-muted-foreground">Checking access...</CardContent></Card>
+              ) : (
+                <Card className="mt-8">
+                  <CardContent className="py-12 flex flex-col items-center gap-3 text-center">
+                    <Lock className="h-10 w-10 text-muted-foreground" />
+                    <p className="font-semibold">This channel is private</p>
+                    <p className="text-sm text-muted-foreground">You need to be invited to access this channel.</p>
+                  </CardContent>
+                </Card>
+              )
+            ) : (
+              <ChatChannel channelId={selectedChannel.id} />
+            )
           )}
         </main>
 

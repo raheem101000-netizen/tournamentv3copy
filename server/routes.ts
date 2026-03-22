@@ -3652,8 +3652,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const { message, imageUrl, replyToId } = req.body;
       const { channelId } = req.params;
+
+      // Check private channel access
+      const hasAccess = await canAccessChannel(channelId, req.session.userId);
+      if (!hasAccess) return res.status(403).json({ error: "Forbidden" });
+
+      const { message, imageUrl, replyToId } = req.body;
 
       // Get user info for username
       const user = await storage.getUser(req.session.userId);
@@ -5389,9 +5394,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: check if a user can access a private channel
+  async function canAccessChannel(channelId: string, userId: string): Promise<boolean> {
+    const channel = await storage.getChannel(channelId);
+    if (!channel) return false;
+    if (!channel.isPrivate) return true; // public channels: always accessible
+
+    // Get server to check ownership
+    const server = await storage.getServer(channel.serverId);
+    if (!server) return false;
+    if (server.ownerId === userId) return true; // server owner always has access
+
+    // Check admin permission
+    const perms = await storage.getEffectivePermissions(channel.serverId, userId);
+    if (perms.includes("manage_channels")) return true;
+
+    // Check channel member list
+    return storage.isChannelMember(channelId, userId);
+  }
+
+  // GET /api/channels/:channelId/access — check if current user can access this channel
+  app.get("/api/channels/:channelId/access", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+      const hasAccess = await canAccessChannel(req.params.channelId, req.session.userId);
+      res.json({ hasAccess });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/channels/:channelId/members — list members of a private channel
+  app.get("/api/channels/:channelId/members", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+      const hasAccess = await canAccessChannel(req.params.channelId, req.session.userId);
+      if (!hasAccess) return res.status(403).json({ error: "Forbidden" });
+      const members = await storage.getChannelMembersWithUsers(req.params.channelId);
+      res.json(members);
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/channels/:channelId/members — add a member (owner or admin with manage_channels)
+  app.post("/api/channels/:channelId/members", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+      const { channelId } = req.params;
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+
+      const channel = await storage.getChannel(channelId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+
+      const server = await storage.getServer(channel.serverId);
+      if (!server) return res.status(404).json({ error: "Server not found" });
+
+      // Only owner or admin (manage_channels) can add members
+      const isOwner = server.ownerId === req.session.userId;
+      const perms = await storage.getEffectivePermissions(channel.serverId, req.session.userId);
+      if (!isOwner && !perms.includes("manage_channels")) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await storage.addChannelMember(channelId, userId);
+      res.status(201).json({ success: true });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // DELETE /api/channels/:channelId/members/:userId — remove a member
+  app.delete("/api/channels/:channelId/members/:userId", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+      const { channelId, userId } = req.params;
+
+      const channel = await storage.getChannel(channelId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+
+      const server = await storage.getServer(channel.serverId);
+      if (!server) return res.status(404).json({ error: "Server not found" });
+
+      const isOwner = server.ownerId === req.session.userId;
+      const perms = await storage.getEffectivePermissions(channel.serverId, req.session.userId);
+      if (!isOwner && !perms.includes("manage_channels")) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await storage.removeChannelMember(channelId, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Channel message routes
   app.get("/api/channels/:channelId/messages", async (req, res) => {
     try {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const hasAccess = await canAccessChannel(req.params.channelId, req.session.userId);
+      if (!hasAccess) return res.status(403).json({ error: "Forbidden" });
+
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
       const messages = await storage.getChannelMessages(req.params.channelId, limit);
 
