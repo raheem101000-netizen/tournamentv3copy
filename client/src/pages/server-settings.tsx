@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -57,19 +56,17 @@ import {
   Ban,
   Link as LinkIcon,
   Copy,
-  Trash2,
   Plus,
   X,
   ArrowLeft,
   Users,
+  Crown,
 } from "lucide-react";
 import type {
   Server,
-  ServerRole,
   ServerBan,
   ServerInvite,
   ServerMember,
-  User,
 } from "@shared/schema";
 
 const DEMO_USER_ID = "user-demo-123";
@@ -80,12 +77,6 @@ const serverProfileSchema = z.object({
   welcomeMessage: z.string().max(2000, "Welcome message must be 2000 characters or less").optional(),
   iconUrl: z.string().optional(),
   backgroundUrl: z.string().optional(),
-});
-
-const roleSchema = z.object({
-  name: z.string().min(1, "Role name is required"),
-  color: z.string().default("#99AAB5"),
-  permissions: z.array(z.string()).default([]),
 });
 
 const banSchema = z.object({
@@ -103,18 +94,6 @@ const memberSchema = z.object({
   customTitle: z.string().optional(),
   explicitPermissions: z.array(z.string()).default([]),
 });
-
-const AVAILABLE_PERMISSIONS = [
-  "manage_server",
-  "manage_roles",
-  "manage_channels",
-  "kick_members",
-  "ban_members",
-  "manage_messages",
-  "mention_everyone",
-  "manage_tournaments",
-  "tournament_dashboard_access",
-];
 
 // Extended type that includes the enriched fields from the backend
 interface EnrichedServerMember extends ServerMember {
@@ -138,11 +117,6 @@ export default function ServerSettings() {
 
   const { data: server, isLoading: serverLoading } = useQuery<Server>({
     queryKey: [`/api/servers/${serverId}`],
-    enabled: !!serverId,
-  });
-
-  const { data: roles = [], isLoading: rolesLoading } = useQuery<ServerRole[]>({
-    queryKey: [`/api/servers/${serverId}/roles`],
     enabled: !!serverId,
   });
 
@@ -197,15 +171,6 @@ export default function ServerSettings() {
     }
   }, [server, serverForm]);
 
-  const roleForm = useForm({
-    resolver: zodResolver(roleSchema),
-    defaultValues: {
-      name: "",
-      color: "#99AAB5",
-      permissions: [],
-    },
-  });
-
   const banForm = useForm({
     resolver: zodResolver(banSchema),
     defaultValues: {
@@ -222,18 +187,14 @@ export default function ServerSettings() {
     },
   });
 
-  const memberForm = useForm({
-    resolver: zodResolver(memberSchema),
-    defaultValues: {
-      userId: "",
-      customTitle: "",
-      explicitPermissions: [],
-    },
-  });
-
   const { data: members = [], isLoading: membersLoading } = useQuery<EnrichedServerMember[]>({
     queryKey: [`/api/servers/${serverId}/members`],
     enabled: !!serverId,
+  });
+
+  const { data: currentUserPermissions } = useQuery<{ permissions: string[] }>({
+    queryKey: [`/api/servers/${serverId}/members/${user?.id}/permissions`],
+    enabled: !!serverId && !!user?.id,
   });
 
   const updateServerMutation = useMutation({
@@ -258,42 +219,6 @@ export default function ServerSettings() {
     },
   });
 
-  const createRoleMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof roleSchema>) => {
-      return await apiRequest("POST", `/api/servers/${serverId}/roles`, {
-        ...data,
-        position: roles.length,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/servers/${serverId}/roles`] });
-      roleForm.reset();
-      toast({
-        title: "Role created",
-        description: "New role has been created successfully.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to create role",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteRoleMutation = useMutation({
-    mutationFn: async (roleId: string) => {
-      return await apiRequest("DELETE", `/api/roles/${roleId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/servers/${serverId}/roles`] });
-      toast({
-        title: "Role deleted",
-        description: "Role has been removed.",
-      });
-    },
-  });
 
   const createBanMutation = useMutation({
     mutationFn: async (data: z.infer<typeof banSchema>) => {
@@ -375,27 +300,6 @@ export default function ServerSettings() {
     },
   });
 
-  const createMemberMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof memberSchema>) => {
-      return await apiRequest("POST", `/api/servers/${serverId}/members`, data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/servers/${serverId}/members`] });
-      memberForm.reset();
-      toast({
-        title: "Member added",
-        description: "Member has been added with custom permissions.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to add member",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
   const updateMemberMutation = useMutation({
     mutationFn: async ({ userId, data }: { userId: string; data: Partial<z.infer<typeof memberSchema>> }) => {
       return await apiRequest("PATCH", `/api/servers/${serverId}/members/${userId}`, data);
@@ -416,16 +320,16 @@ export default function ServerSettings() {
     },
   });
 
-  const deleteMemberMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      return await apiRequest("DELETE", `/api/servers/${serverId}/members/${userId}`);
+  const assignRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
+      return await apiRequest("PATCH", `/api/servers/${serverId}/members/${userId}`, { role });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/servers/${serverId}/members`] });
-      toast({
-        title: "Member removed",
-        description: "Member has been removed from server.",
-      });
+      toast({ title: "Role updated", description: "Member role has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update role", description: error.message, variant: "destructive" });
     },
   });
 
@@ -459,16 +363,8 @@ export default function ServerSettings() {
     });
   };
 
-  const onRoleSubmit = (data: z.infer<typeof roleSchema>) => {
-    createRoleMutation.mutate(data);
-  };
-
   const onBanSubmit = (data: z.infer<typeof banSchema>) => {
     createBanMutation.mutate(data);
-  };
-
-  const onMemberSubmit = (data: z.infer<typeof memberSchema>) => {
-    createMemberMutation.mutate(data);
   };
 
   const onInviteSubmit = (data: z.infer<typeof inviteSchema>) => {
@@ -500,15 +396,18 @@ export default function ServerSettings() {
     );
   }
 
-  // Only server owner can access settings
-  if (!user || server.ownerId !== user.id) {
+  const isOwner = server.ownerId === user?.id;
+  const canManageServer = isOwner || currentUserPermissions?.permissions?.includes("manage_server");
+
+  // Only server owner or admins can access settings
+  if (!user || !canManageServer) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
         <Shield className="w-10 h-10 text-muted-foreground" />
         <div className="text-center space-y-2">
           <h2 className="text-lg font-semibold">Access Denied</h2>
           <p className="text-sm text-muted-foreground">
-            Only the server owner can access settings.
+            Only the server owner or admins can access settings.
           </p>
         </div>
         <Button variant="outline" onClick={() => navigate(`/server/${serverId}`, { replace: true })}>
@@ -708,152 +607,40 @@ export default function ServerSettings() {
           <TabsContent value="roles" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Create Role</CardTitle>
-                <CardDescription>Add a new role with custom permissions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...roleForm}>
-                  <form onSubmit={roleForm.handleSubmit(onRoleSubmit)} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={roleForm.control}
-                        name="name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Role Name</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="e.g., Moderator"
-                                data-testid="input-role-name"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={roleForm.control}
-                        name="color"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Role Color</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                type="color"
-                                data-testid="input-role-color"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={roleForm.control}
-                      name="permissions"
-                      render={() => (
-                        <FormItem>
-                          <FormLabel>Permissions</FormLabel>
-                          <div className="grid grid-cols-2 gap-3 mt-2">
-                            {AVAILABLE_PERMISSIONS.map((permission) => (
-                              <FormField
-                                key={permission}
-                                control={roleForm.control}
-                                name="permissions"
-                                render={({ field }) => (
-                                  <FormItem className="flex items-center space-x-2 space-y-0">
-                                    <FormControl>
-                                      <Checkbox
-                                        checked={(field.value as string[])?.includes(permission)}
-                                        onCheckedChange={(checked) => {
-                                          const current = (field.value as string[]) || [];
-                                          field.onChange(
-                                            checked
-                                              ? [...current, permission]
-                                              : current.filter((p: string) => p !== permission)
-                                          );
-                                        }}
-                                        data-testid={`checkbox-permission-${permission}`}
-                                      />
-                                    </FormControl>
-                                    <FormLabel className="text-sm font-normal cursor-pointer">
-                                      {permission.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
-                                    </FormLabel>
-                                  </FormItem>
-                                )}
-                              />
-                            ))}
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <Button
-                      type="submit"
-                      disabled={createRoleMutation.isPending}
-                      data-testid="button-create-role"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      {createRoleMutation.isPending ? "Creating..." : "Create Role"}
-                    </Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
                 <CardTitle>Server Roles</CardTitle>
-                <CardDescription>Manage existing roles and permissions</CardDescription>
+                <CardDescription>This server uses 3 fixed roles</CardDescription>
               </CardHeader>
               <CardContent>
-                {rolesLoading ? (
-                  <p className="text-muted-foreground">Loading roles...</p>
-                ) : roles.length === 0 ? (
-                  <p className="text-muted-foreground">No roles created yet</p>
-                ) : (
-                  <div className="space-y-3">
-                    {roles.map((role) => (
-                      <div
-                        key={role.id}
-                        className="flex items-center justify-between p-4 border rounded-md"
-                        data-testid={`role-item-${role.id}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-4 h-4 rounded-full"
-                            style={{ backgroundColor: role.color || "#99AAB5" }}
-                          />
-                          <div>
-                            <p className="font-medium" data-testid={`text-role-name-${role.id}`}>
-                              {role.name}
-                            </p>
-                            <div className="flex gap-2 mt-1 flex-wrap">
-                              {role.permissions?.map((perm) => (
-                                <Badge key={perm} variant="secondary" className="text-xs">
-                                  {perm.replace(/_/g, " ")}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteRoleMutation.mutate(role.id)}
-                          data-testid={`button-delete-role-${role.id}`}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </div>
-                    ))}
+                <div className="space-y-4">
+                  <div className="p-4 border rounded-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown className="w-5 h-5 text-yellow-500" />
+                      <p className="font-semibold">Owner</p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Automatically assigned to the server creator. Has full control over all settings.
+                      Cannot be assigned or removed manually.
+                    </p>
                   </div>
-                )}
+                  <div className="p-4 border rounded-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge style={{ backgroundColor: "#5865F2", color: "white" }}>Admin</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Can manage server settings, members, and roles. Can assign Tournament Manager to members.
+                      Assigned and removed by the Owner only.
+                    </p>
+                  </div>
+                  <div className="p-4 border rounded-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge style={{ backgroundColor: "#57F287", color: "#000" }}>Tournament Manager</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Has access to the tournament dashboard. Can create and manage tournaments within the server.
+                      Assigned and removed by the Owner or Admin.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -861,218 +648,75 @@ export default function ServerSettings() {
           <TabsContent value="members" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Add Member Permissions</CardTitle>
-                <CardDescription>Grant specific permissions to server members</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...memberForm}>
-                  <form onSubmit={memberForm.handleSubmit(onMemberSubmit)} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={memberForm.control}
-                        name="userId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Select Member</FormLabel>
-                            <Select value={field.value} onValueChange={field.onChange}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-member-user">
-                                  {field.value ? (
-                                    (() => {
-                                      const selectedMember = members.find(m => m.userId === field.value);
-                                      return selectedMember ? (
-                                        <div className="flex items-center gap-2">
-                                          {(selectedMember as any).avatarUrl && (
-                                            <img
-                                              src={(selectedMember as any).avatarUrl}
-                                              alt=""
-                                              className="w-5 h-5 rounded-full object-cover"
-                                            />
-                                          )}
-                                          <span className="text-primary">@{(selectedMember as any).username || 'Unknown'}</span>
-                                        </div>
-                                      ) : <SelectValue placeholder="Select a member" />;
-                                    })()
-                                  ) : (
-                                    <SelectValue placeholder="Select a member to add permissions" />
-                                  )}
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {members.length === 0 ? (
-                                  <div className="px-2 py-4 text-sm text-muted-foreground text-center">
-                                    No members found
-                                  </div>
-                                ) : (
-                                  members.map((member) => (
-                                    <SelectItem key={member.userId} value={member.userId}>
-                                      <div className="flex items-center gap-3">
-                                        {(member as any).avatarUrl ? (
-                                          <img
-                                            src={(member as any).avatarUrl}
-                                            alt=""
-                                            className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                                          />
-                                        ) : (
-                                          <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                                            <span className="text-xs font-medium">
-                                              {((member as any).username || 'U').slice(0, 2).toUpperCase()}
-                                            </span>
-                                          </div>
-                                        )}
-                                        <div className="flex flex-col">
-                                          <span className="font-medium">{(member as any).displayName || (member as any).username || 'Unknown'}</span>
-                                          <span className="text-xs text-muted-foreground">@{(member as any).username}</span>
-                                        </div>
-                                      </div>
-                                    </SelectItem>
-                                  ))
-                                )}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>
-                              Select a member to grant permissions
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={memberForm.control}
-                        name="customTitle"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Custom Title (Optional)</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="e.g., Tournament Manager"
-                                data-testid="input-member-custom-title"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={memberForm.control}
-                      name="explicitPermissions"
-                      render={() => (
-                        <FormItem>
-                          <FormLabel>Permissions</FormLabel>
-                          <div className="grid grid-cols-2 gap-3 mt-2">
-                            {AVAILABLE_PERMISSIONS.map((permission) => (
-                              <FormField
-                                key={permission}
-                                control={memberForm.control}
-                                name="explicitPermissions"
-                                render={({ field }) => (
-                                  <FormItem className="flex items-center space-x-2 space-y-0">
-                                    <FormControl>
-                                      <Checkbox
-                                        checked={(field.value as string[])?.includes(permission)}
-                                        onCheckedChange={(checked) => {
-                                          const current = (field.value as string[]) || [];
-                                          field.onChange(
-                                            checked
-                                              ? [...current, permission]
-                                              : current.filter((p: string) => p !== permission)
-                                          );
-                                        }}
-                                        data-testid={`checkbox-member-permission-${permission}`}
-                                      />
-                                    </FormControl>
-                                    <FormLabel className="text-sm font-normal cursor-pointer">
-                                      {permission.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
-                                    </FormLabel>
-                                  </FormItem>
-                                )}
-                              />
-                            ))}
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <Button
-                      type="submit"
-                      disabled={createMemberMutation.isPending}
-                      data-testid="button-add-member"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      {createMemberMutation.isPending ? "Adding..." : "Add Member"}
-                    </Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
                 <CardTitle>Server Members</CardTitle>
-                <CardDescription>Manage member permissions and access</CardDescription>
+                <CardDescription>Assign roles to members. Removing a role sets them back to Member — it does not remove them from the server.</CardDescription>
               </CardHeader>
               <CardContent>
                 {membersLoading ? (
                   <p className="text-muted-foreground">Loading members...</p>
                 ) : members.length === 0 ? (
-                  <p className="text-muted-foreground">No members with custom permissions yet</p>
+                  <p className="text-muted-foreground">No members found</p>
                 ) : (
                   <div className="space-y-3">
-                    {members.map((member) => (
+                    {members
+                      .filter(m => m.username !== "Unknown")
+                      .sort((a, b) => {
+                        if (a.isOwner && !b.isOwner) return -1;
+                        if (!a.isOwner && b.isOwner) return 1;
+                        return (a.username || "").localeCompare(b.username || "");
+                      })
+                      .map((member) => (
                       <div
                         key={member.id}
-                        className="flex items-center justify-between p-4 border rounded-md"
+                        className="flex items-center justify-between p-4 border rounded-md gap-3"
                         data-testid={`member-item-${member.id}`}
                       >
-                        <div>
-                          <div className="flex items-center gap-3">
-                            {/* Avatar */}
-                            {member.avatarUrl ? (
-                              <img
-                                src={member.avatarUrl}
-                                alt={member.username || "User"}
-                                className="h-10 w-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded-full bg-zinc-700 flex items-center justify-center text-white font-medium">
-                                {(member.username || member.displayName || "U")[0].toUpperCase()}
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-medium" data-testid={`text-member-id-${member.id}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          {member.avatarUrl ? (
+                            <img
+                              src={member.avatarUrl}
+                              alt={member.username || "User"}
+                              className="h-10 w-10 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-zinc-700 flex items-center justify-center text-white font-medium flex-shrink-0">
+                              {(member.username || member.displayName || "U")[0].toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium truncate" data-testid={`text-member-id-${member.id}`}>
                                 {member.displayName || member.username || member.userId}
                               </p>
-                              {member.username && member.displayName && (
-                                <p className="text-sm text-muted-foreground">@{member.username}</p>
+                              {member.isOwner && <Crown className="w-4 h-4 text-yellow-500 flex-shrink-0" />}
+                              {!member.isOwner && member.role === "Admin" && (
+                                <Badge style={{ backgroundColor: "#5865F2", color: "white" }} className="text-xs">Admin</Badge>
+                              )}
+                              {!member.isOwner && member.role === "Tournament Manager" && (
+                                <Badge style={{ backgroundColor: "#57F287", color: "#000" }} className="text-xs">Tournament Manager</Badge>
                               )}
                             </div>
-                            {member.customTitle && (
-                              <Badge variant="secondary" className="text-xs">
-                                {member.customTitle}
-                              </Badge>
+                            {member.username && member.displayName && (
+                              <p className="text-sm text-muted-foreground">@{member.username}</p>
                             )}
                           </div>
-                          <div className="flex gap-2 mt-2 flex-wrap">
-                            {member.explicitPermissions?.map((perm) => (
-                              <Badge key={perm} variant="outline" className="text-xs">
-                                {perm.replace(/_/g, " ")}
-                              </Badge>
-                            ))}
-                          </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteMemberMutation.mutate(member.userId)}
-                          data-testid={`button-delete-member-${member.id}`}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        {!member.isOwner && (
+                          <Select
+                            value={member.role || "Member"}
+                            onValueChange={(role) => assignRoleMutation.mutate({ userId: member.userId, role })}
+                            disabled={assignRoleMutation.isPending}
+                          >
+                            <SelectTrigger className="w-48 flex-shrink-0" data-testid={`select-role-${member.userId}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Member">Member</SelectItem>
+                              {isOwner && <SelectItem value="Admin">Admin</SelectItem>}
+                              <SelectItem value="Tournament Manager">Tournament Manager</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     ))}
                   </div>

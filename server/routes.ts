@@ -3996,7 +3996,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/users/:userId/servers", async (req, res) => {
     try {
-      const servers = await storage.getServersByUser(req.params.userId);
+      const allServers = await storage.getServersByUser(req.params.userId);
+      // Deduplicate by server ID (guard against duplicate member records)
+      const seen = new Set<string>();
+      const servers = allServers.filter(s => !seen.has(s.id) && !!seen.add(s.id));
       const serverIds = servers.map(s => s.id);
 
       const memberCounts = await storage.getServerMemberCounts(serverIds);
@@ -4747,6 +4750,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         serverId: req.params.serverId,
       });
+      // Upsert: if member already exists, update instead of creating a duplicate
+      const existing = await storage.getServerMemberByUserId(req.params.serverId, validatedData.userId);
+      if (existing) {
+        const updated = await storage.updateServerMember(req.params.serverId, validatedData.userId, {
+          roleId: validatedData.roleId,
+          role: validatedData.role,
+          customTitle: validatedData.customTitle,
+          explicitPermissions: validatedData.explicitPermissions,
+        });
+        return res.json(updated);
+      }
       const member = await storage.createServerMember(validatedData);
       res.status(201).json(member);
     } catch (error: any) {
@@ -4761,20 +4775,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const server = await storage.getServer(req.params.serverId);
       const roles = await storage.getRolesByServer(req.params.serverId);
 
+      // Built-in role colors for the simplified 3-role system
+      const BUILT_IN_ROLE_COLORS: Record<string, string> = {
+        "Owner": "#F0B429",
+        "Admin": "#5865F2",
+        "Tournament Manager": "#57F287",
+      };
+
       // Enrich members with role information (no more N+1 user fetching)
       const enrichedMembers = membersWithUsers.map((item) => {
         const member = item;
         const user = item.user;
         const role = member.roleId ? roles.find(r => r.id === member.roleId) : null;
+        const isOwner = server?.ownerId === member.userId;
+        const roleName = isOwner ? "Owner" : (role?.name || member.role || "Member");
+        const roleColor = role?.color || BUILT_IN_ROLE_COLORS[roleName] || "#99AAB5";
 
         return {
           ...member,
           username: user?.username || "Unknown",
           displayName: user?.displayName || user?.username || "Unknown",
           avatarUrl: user?.avatarUrl || null,
-          isOwner: server?.ownerId === member.userId,
-          roleName: role?.name || member.role || "Member",
-          roleColor: role?.color || "#99AAB5",
+          isOwner,
+          roleName,
+          roleColor,
         };
       });
       res.json(enrichedMembers);
@@ -4821,7 +4845,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updateSchema = z.object({
-        roleId: z.string().optional(),
+        roleId: z.string().nullable().optional(),
+        role: z.string().optional(),
         customTitle: z.string().optional(),
         explicitPermissions: z.array(z.string()).optional(),
       });

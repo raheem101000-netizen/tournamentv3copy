@@ -1355,6 +1355,15 @@ export class DatabaseStorage implements IStorage {
 
     const permissions = new Set<string>(member.explicitPermissions || []);
 
+    // Role-based permissions for the simplified 3-role system
+    const ROLE_PERMISSIONS: Record<string, string[]> = {
+      "Admin": ["manage_server", "manage_roles", "manage_channels", "kick_members", "ban_members", "manage_messages", "mention_everyone", "manage_tournaments", "tournament_dashboard_access"],
+      "Tournament Manager": ["manage_tournaments", "tournament_dashboard_access"],
+    };
+    if (member.role && ROLE_PERMISSIONS[member.role]) {
+      ROLE_PERMISSIONS[member.role].forEach((p: string) => permissions.add(p));
+    }
+
     if (member.roleId) {
       const [role] = await db.select().from(serverRoles).where(eq(serverRoles.id, member.roleId));
       if (role && role.permissions) {

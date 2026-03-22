@@ -4,7 +4,7 @@ import Particles from "@/components/ui/particles";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronDown, Settings, Trophy, Lock, Plus, ChevronLeft, ChevronRight, FolderOpen, ArrowLeft, BookOpen, Users, Crown, Search, LogOut, MoreVertical } from "lucide-react";
+import { ChevronDown, Settings, Trophy, Lock, Plus, ChevronLeft, ChevronRight, FolderOpen, ArrowLeft, BookOpen, Users, Crown, Search, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -20,7 +20,6 @@ import ManageCategoriesDialog from "@/components/ManageCategoriesDialog";
 import useEmblaCarousel from "embla-carousel-react";
 import { useAuth } from "@/contexts/AuthContext";
 import UserProfileModal from "@/components/UserProfileModal";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
@@ -378,34 +377,28 @@ export default function PreviewServerDetail() {
                   <h1 className="text-lg font-bold truncate">Welcome</h1>
                 </div>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" data-testid="button-server-menu-welcome">
-                    <MoreVertical className="w-5 h-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {isOwner && (
-                    <DropdownMenuItem
-                      onClick={() => serverId && setLocation(`/server/${serverId}/settings`)}
-                      data-testid="menu-item-settings-welcome"
-                    >
-                      <Settings className="w-4 h-4 mr-2" />
-                      Settings
-                    </DropdownMenuItem>
-                  )}
-                  {!isOwner && (
-                    <DropdownMenuItem
-                      onClick={() => setLeaveServerDialogOpen(true)}
-                      className="text-destructive focus:text-destructive"
-                      data-testid="menu-item-leave-server-welcome"
-                    >
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Leave Server
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {isOwner ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => serverId && setLocation(`/server/${serverId}/settings`)}
+                  data-testid="button-server-settings-welcome"
+                >
+                  <Settings className="w-4 h-4 mr-1" />
+                  Settings
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setLeaveServerDialogOpen(true)}
+                  className="text-destructive hover:text-destructive"
+                  data-testid="button-leave-server-welcome"
+                >
+                  <LogOut className="w-4 h-4 mr-1" />
+                  Leave
+                </Button>
+              )}
             </div>
           </div>
         </header>
@@ -877,37 +870,28 @@ export default function PreviewServerDetail() {
                 </button>
               </div>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="ghost" data-testid="button-server-menu">
-                  <MoreVertical className="w-5 h-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {isOwner && (
-                  <DropdownMenuItem
-                    onClick={() => serverId && setLocation(`/server/${serverId}/settings`)}
-                    data-testid="menu-item-settings"
-                  >
-                    <Settings className="w-4 h-4 mr-2" />
-                    Settings
-                  </DropdownMenuItem>
-                )}
-                {!isOwner && (
-                  <>
-                    {isOwner && <DropdownMenuSeparator />}
-                    <DropdownMenuItem
-                      onClick={() => setLeaveServerDialogOpen(true)}
-                      className="text-destructive focus:text-destructive"
-                      data-testid="menu-item-leave-server"
-                    >
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Leave Server
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {isOwner ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => serverId && setLocation(`/server/${serverId}/settings`)}
+                data-testid="button-server-settings"
+              >
+                <Settings className="w-4 h-4 mr-1" />
+                Settings
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setLeaveServerDialogOpen(true)}
+                className="text-destructive hover:text-destructive"
+                data-testid="button-leave-server"
+              >
+                <LogOut className="w-4 h-4 mr-1" />
+                Leave
+              </Button>
+            )}
           </div>
         </div>
       </header>
