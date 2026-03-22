@@ -1223,6 +1223,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/tournaments/:id", async (req, res) => {
     try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const existing = await storage.getTournament(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Tournament not found" });
+      }
+
+      // Allow: tournament organizer, server owner, or member with manage_tournaments in tournament's server
+      const userId = req.session.userId;
+      let canManage = existing.organizerId === userId;
+      if (!canManage && existing.serverId) {
+        const server = await storage.getServer(existing.serverId);
+        if (server?.ownerId === userId) canManage = true;
+        if (!canManage) {
+          const perms = await storage.getEffectivePermissions(existing.serverId, userId);
+          if (perms.includes("manage_tournaments")) canManage = true;
+        }
+      }
+      if (!canManage) {
+        return res.status(403).json({ error: "Only the tournament organizer, server owner, or Tournament Manager can edit this tournament" });
+      }
+
       // Parse date strings back to Date objects if present
       const updateData = { ...req.body };
       if (updateData.startDate && typeof updateData.startDate === 'string') {
@@ -1262,11 +1286,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check organizer permission
       if (tournament.organizerId !== userId) {
-        // Also allow server owner to delete
         if (tournament.serverId) {
           const server = await storage.getServer(tournament.serverId);
-          if (!server || server.ownerId !== userId) {
-            return res.status(403).json({ error: "Only the tournament organizer or server owner can delete this tournament" });
+          const isServerOwner = server?.ownerId === userId;
+          if (!isServerOwner) {
+            const perms = await storage.getEffectivePermissions(tournament.serverId, userId);
+            if (!perms.includes("manage_tournaments")) {
+              return res.status(403).json({ error: "Only the tournament organizer, server owner, or Tournament Manager can delete this tournament" });
+            }
           }
         } else {
           return res.status(403).json({ error: "Only the tournament organizer can delete this tournament" });
@@ -1441,7 +1468,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "User not found" });
       }
       if (!user.canHostTournaments) {
-        return res.status(403).json({ error: "You do not have permission to host tournaments" });
+        // Tournament Managers can create tournaments for their specific server
+        const targetServerId = req.body.serverId;
+        if (targetServerId) {
+          const serverForCheck = await storage.getServer(targetServerId);
+          const isServerOwner = serverForCheck?.ownerId === req.session.userId;
+          if (!isServerOwner) {
+            const serverPerms = await storage.getEffectivePermissions(targetServerId, req.session.userId);
+            if (!serverPerms.includes("manage_tournaments")) {
+              return res.status(403).json({ error: "You do not have permission to create tournaments in this server" });
+            }
+          }
+        } else {
+          return res.status(403).json({ error: "You do not have permission to host tournaments" });
+        }
       }
 
       const validatedData = insertTournamentSchema.parse(req.body);
@@ -3837,9 +3877,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Server not found" });
       }
 
-      // Only owner can update server
+      // Owner or member with manage_server permission can update server settings
       if (server.ownerId !== req.session.userId) {
-        return res.status(403).json({ error: "Only the server owner can update settings" });
+        const perms = await storage.getEffectivePermissions(req.params.id, req.session.userId);
+        if (!perms.includes("manage_server")) {
+          return res.status(403).json({ error: "Only the server owner or an Admin can update server settings" });
+        }
       }
 
       const allowedUpdates = {
@@ -5793,14 +5836,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: check if a user is server owner or has a specific permission
+  async function requireServerPermission(serverId: string, userId: string | undefined, permission: string, res: any): Promise<boolean> {
+    if (!userId) { res.status(401).json({ error: "Unauthorized" }); return false; }
+    const server = await storage.getServer(serverId);
+    if (!server) { res.status(404).json({ error: "Server not found" }); return false; }
+    if (server.ownerId === userId) return true;
+    const perms = await storage.getEffectivePermissions(serverId, userId);
+    if (perms.includes(permission)) return true;
+    res.status(403).json({ error: "You do not have permission to perform this action" });
+    return false;
+  }
+
   // Server ban routes
   app.post("/api/servers/:serverId/bans", async (req, res) => {
     try {
+      const allowed = await requireServerPermission(req.params.serverId, req.session.userId, "ban_members", res);
+      if (!allowed) return;
       const validatedData = insertServerBanSchema.parse({
         serverId: req.params.serverId,
         userId: req.body.userId,
         reason: req.body.reason,
-        bannedBy: req.body.bannedBy,
+        bannedBy: req.session.userId,
       });
       const ban = await storage.createServerBan(validatedData);
       res.status(201).json(ban);
@@ -5813,6 +5870,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/servers/:serverId/bans", async (req, res) => {
     try {
+      const allowed = await requireServerPermission(req.params.serverId, req.session.userId, "ban_members", res);
+      if (!allowed) return;
       const bans = await storage.getBansByServer(req.params.serverId);
       res.status(200).json(bans);
     } catch (error: any) {
@@ -5824,6 +5883,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/servers/:serverId/bans/:userId", async (req, res) => {
     try {
+      const allowed = await requireServerPermission(req.params.serverId, req.session.userId, "ban_members", res);
+      if (!allowed) return;
       await storage.deleteBan(req.params.serverId, req.params.userId);
       res.status(204).send();
     } catch (error: any) {

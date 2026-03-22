@@ -189,7 +189,7 @@ export default function PreviewServerDetail() {
 
           <span className="font-semibold text-lg">{fullScreenChannel?.name || 'Chat'}</span>
 
-          {(isOwner || (user as any)?.isAdmin) && !isChannelDetailView ? (
+          {(isOwner || userPermissions?.permissions?.includes("manage_channels")) && !isChannelDetailView ? (
             <button
               className="text-blue-500 text-lg font-normal min-w-[60px] text-right"
               onClick={() => setChannelSettingsOpen(true)}
@@ -206,14 +206,22 @@ export default function PreviewServerDetail() {
           {fullScreenChannel?.type === "announcements" ? (
             <AnnouncementsChannel
               channelId={fullScreenChannelId}
-              canPost={server?.ownerId === currentUserId || (user as any)?.isAdmin}
+              canPost={isOwner || userPermissions?.permissions?.includes("manage_messages")}
             />
           ) : fullScreenChannel?.type === "tournament_dashboard" ? (
-            <TournamentDashboardChannel
-              serverId={serverId!}
-              canManage={isOwner || (user as any)?.isAdmin}
-              onViewModeChange={setIsChannelDetailView}
-            />
+            (isOwner || userPermissions?.permissions?.includes("tournament_dashboard_access")) ? (
+              <TournamentDashboardChannel
+                serverId={serverId!}
+                canManage={isOwner || userPermissions?.permissions?.includes("manage_tournaments")}
+                onViewModeChange={setIsChannelDetailView}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+                <Lock className="w-8 h-8 text-muted-foreground" />
+                <p className="font-semibold">Access Restricted</p>
+                <p className="text-sm text-muted-foreground">Only the server owner or Tournament Manager can access the Tournament Dashboard.</p>
+              </div>
+            )
           ) : (
             <ChatChannel channelId={fullScreenChannelId} isPreview={false} />
           )}
@@ -787,7 +795,10 @@ export default function PreviewServerDetail() {
                 </Card>
               ) : (server?.ownerId === currentUserId ||
                 (!permissionsError && userPermissions?.permissions?.includes("tournament_dashboard_access"))) ? (
-                <TournamentDashboardChannel serverId={serverId!} />
+                <TournamentDashboardChannel
+                  serverId={serverId!}
+                  canManage={isOwner || userPermissions?.permissions?.includes("manage_tournaments")}
+                />
               ) : (
                 <Card className="mt-8">
                   <CardHeader>
@@ -809,7 +820,7 @@ export default function PreviewServerDetail() {
           {selectedChannel.type === "announcements" && (
             <AnnouncementsChannel
               channelId={selectedChannel.id}
-              canPost={server?.ownerId === currentUserId || (user as any)?.isAdmin}
+              canPost={isOwner || userPermissions?.permissions?.includes("manage_messages")}
             />
           )}
           {selectedChannel.type === "chat" && (
