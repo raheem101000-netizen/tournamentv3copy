@@ -696,7 +696,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                   </Button>
                 ) : (
                   <Button variant="outline" onClick={() => setIsEndTournamentDialogOpen(true)} data-testid="button-end-tournament">
-                    End Tournament
+                    End
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => setIsAwardAchievementDialogOpen(true)} data-testid="button-award-achievement-detail">
@@ -704,7 +704,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                   Award
                 </Button>
                 <Button variant="outline" onClick={() => setIsEditDialogOpen(true)} data-testid="button-edit-tournament">
-                  Edit Tournament
+                  Edit
                 </Button>
                 <Button variant="destructive" size="icon" onClick={() => {
                   console.log('[DELETE] Trash button clicked, opening dialog');
