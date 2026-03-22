@@ -1245,11 +1245,11 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                     <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
                       <h3 className="font-semibold text-sm">Match Generation</h3>
                       <div className="flex gap-2 items-end">
-                        <div className="flex-1 space-y-2">
+                        <div className="w-36 space-y-2">
                           <Label htmlFor="roundName">Round Name (Optional)</Label>
                           <Input
                             id="roundName"
-                            placeholder="e.g. Quarterfinals"
+                            placeholder="e.g. Round 1"
                             value={roundName}
                             onChange={(e) => setRoundName(e.target.value)}
                           />
