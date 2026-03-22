@@ -129,6 +129,15 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   // Computed permission: user is server owner
   const isServerOwner = user?.id === server?.ownerId;
 
+  // Self-contained permissions query — so this component does NOT solely rely on the
+  // canManage prop from the parent. If the parent ever forgets to pass canManage,
+  // or passes a stale value, this query acts as the authoritative fallback.
+  const { data: selfPermissions } = useQuery<{ permissions: string[] }>({
+    queryKey: [`/api/servers/${serverId}/members/${user?.id}/permissions`],
+    enabled: !!serverId && !!user?.id,
+    staleTime: 30000, // Cache for 30s to avoid hammering the endpoint
+  });
+
   const createTournamentMutation = useMutation({
     mutationFn: async (data: InsertTournament & { teamNames: string[]; registrationConfig?: RegistrationFormConfig; serverId?: string }) => {
       const tournament = await apiRequest('POST', '/api/tournaments', data);
@@ -533,11 +542,44 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     );
   })();
 
-  // Whether the current user is an organizer/admin (sees all matches)
-  const isOrganizer = canManage || !!user?.isAdmin || user?.role === 'admin' ||
-    user?.id === selectedTournament?.organizerId || isServerOwner;
+  // ─── PERMANENT PERMISSION LOGIC — DO NOT SIMPLIFY ──────────────────────────
+  // This determines who has full tournament management access (organizer view).
+  //
+  // canManage: passed from the parent (server owner OR has manage_tournaments
+  //   permission). This is the PRIMARY signal — covers Owner AND Tournament Manager.
+  //
+  // selfPermissions: self-contained fallback from the component's own query.
+  //   Guards against the parent accidentally passing canManage=false or being slow
+  //   to load. If the user has manage_tournaments, they ARE an organizer.
+  //
+  // isServerOwner: server owner ALWAYS has organizer-level access. This is a
+  //   hard safety net — never remove this condition.
+  //
+  // organizerId: the user who originally created this specific tournament
+  //   automatically has organizer access to it, even without a server role.
+  //
+  // NOTE: Do NOT add checks like user?.role === 'admin' for the global role field —
+  //   that field is for global admins and is unrelated to server-specific roles.
+  //   All server-role checks must go through canManage or selfPermissions.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const hasTournamentManagerPermission =
+    (selfPermissions?.permissions ?? []).includes("manage_tournaments");
 
-  // Only admin, owner/organizer, or match participants can see match chat
+  const isOrganizer =
+    canManage ||                                    // parent-passed: Owner or Tournament Manager
+    hasTournamentManagerPermission ||               // self-checked: Tournament Manager (fallback)
+    isServerOwner ||                                // server owner: always has access
+    user?.id === selectedTournament?.organizerId;   // tournament creator: always has access
+
+  // ─── MATCH CHAT ACCESS ───────────────────────────────────────────────────────
+  // canAccessMatchChat is used ONLY to control what matches are visible inside
+  // the Match Chat tab (via visibleMatchChatList). It does NOT gate the tab itself.
+  //
+  // IMPORTANT: The Match Chat tab must ALWAYS be visible to all server members.
+  // Participants need to enter their own match chats. The visibleMatchChatList
+  // already filters which matches each user sees. DO NOT put canAccessMatchChat
+  // as a condition on the <TabsTrigger> — that broke participant access repeatedly.
+  // ─────────────────────────────────────────────────────────────────────────────
   const canAccessMatchChat = isOrganizer || isMatchParticipant;
 
   // For league/round_robin: participants see only their oldest unresolved match.
@@ -724,9 +766,11 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
               <TabsTrigger value="bracket" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Bracket</TabsTrigger>
             )}
             <TabsTrigger value="standings" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Standings</TabsTrigger>
-            {canAccessMatchChat && (
-              <TabsTrigger value="match-chat" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Match Chat</TabsTrigger>
-            )}
+            {/* Match Chat is ALWAYS visible to all server members.
+                Participants need to see this tab to access their own match.
+                visibleMatchChatList (below) controls what matches each user sees.
+                NEVER re-add a canAccessMatchChat gate here — it broke repeatedly. */}
+            <TabsTrigger value="match-chat" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Match Chat</TabsTrigger>
             {isOrganizer && (
               <>
                 <TabsTrigger value="participants" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Create Match</TabsTrigger>
@@ -889,6 +933,10 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
           )}
 
 
+          {/* Match Chat tab content — visible to ALL users.
+              isOrganizer: sees all matches with full management controls.
+              isMatchParticipant: sees only their own match(es) via visibleMatchChatList.
+              Others: see an empty state message. */}
           <TabsContent value="match-chat" className="space-y-4 w-full px-4 sm:px-6 pb-4">
             {selectedTournamentMatches.length > 0 ? (
               showMatchChat && selectedMatch ? (
@@ -1056,7 +1104,17 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
               ) : (
                 // Grid of match fixture cards
                 <div className="space-y-3">
+                  {visibleMatchChatList.length === 0 ? (
+                    <Card className="p-8">
+                      <p className="text-center text-muted-foreground text-sm">
+                        {isOrganizer
+                          ? "No confirmed matches yet."
+                          : "You don't have any active matches in this tournament."}
+                      </p>
+                    </Card>
+                  ) : (
                   <p className="text-sm text-muted-foreground">Click a fixture to view chat</p>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {visibleMatchChatList.map((match) => {
                       const user1 = getUserInfoByTeamId(match.team1Id);

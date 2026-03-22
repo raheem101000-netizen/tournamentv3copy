@@ -105,9 +105,14 @@ export default function PreviewServerDetail() {
   const activePrivateChannelId = fullScreenChannelId || selectedChannelId;
   const activeChannel = channels.find(c => c.id === activePrivateChannelId);
 
+  // Use staleTime to avoid re-checking access on every window focus (common on mobile).
+  // placeholderData: keep the last result while refetching so the "private" wall
+  // doesn't flash during revalidation for channels the user already has access to.
   const { data: channelAccess, isLoading: channelAccessLoading } = useQuery<{ hasAccess: boolean }>({
     queryKey: [`/api/channels/${activePrivateChannelId}/access`],
     enabled: !!activePrivateChannelId && !!(activeChannel?.isPrivate),
+    staleTime: 60000,        // Access decisions are stable; don't re-check every focus
+    refetchOnWindowFocus: false, // Prevents remounting ChatChannel on mobile focus events
   });
 
   const { data: channelMembersData = [], refetch: refetchChannelMembers } = useQuery<{ id: string; userId: string; username: string; avatarUrl: string | null; addedAt: Date }[]>({
@@ -210,7 +215,10 @@ export default function PreviewServerDetail() {
   if (fullScreenChannelId) {
     const fullScreenChannel = channels.find(c => c.id === fullScreenChannelId);
     const isPrivateChannel = !!fullScreenChannel?.isPrivate;
-    const hasAccess = !isPrivateChannel || (channelAccess?.hasAccess ?? false);
+    // During initial load (channelAccessLoading=true, channelAccess=undefined),
+    // default to true so we don't flash "This channel is private" for users who DO
+    // have access. The backend will block them if they actually don't have access.
+    const hasAccess = !isPrivateChannel || channelAccess?.hasAccess !== false;
 
     // Private channel member IDs for quick lookup
     const channelMemberIds = new Set(channelMembersData.map(m => m.userId));

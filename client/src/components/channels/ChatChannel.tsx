@@ -139,6 +139,10 @@ export default function ChatChannel({ channelId, threadId, isPreview = false }: 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  // Track message count to detect new messages (vs polling returning same data).
+  // Only auto-scroll when new messages arrive AND user is near the bottom.
+  const lastMessageCountRef = useRef(0);
+  const isNearBottomRef = useRef(true); // true initially so first load scrolls down
 
   // Determine API endpoints based on mode
   const apiEndpoint = threadId
@@ -151,8 +155,13 @@ export default function ChatChannel({ channelId, threadId, isPreview = false }: 
 
   const activeId = threadId || channelId;
 
-  // Fetch messages from API with polling for real-time updates
-  const { data: messages = [], isLoading: messagesLoading, refetch: refetchMessages } = useQuery<ChannelMessage[]>({
+  // Fetch messages from API with polling for real-time updates.
+  // IMPORTANT: Do NOT add refetchOnMount:"always" — it causes double-fetches on
+  // private channels because canAccessChannel triggers component remounts.
+  // React Query's default refetchOnMount:true respects staleTime and is sufficient.
+  // The redundant useEffect([activeId, refetchMessages]) was removed: React Query
+  // already refetches when queryKey changes (i.e., when activeId changes).
+  const { data: messages = [], isLoading: messagesLoading } = useQuery<ChannelMessage[]>({
     queryKey: queryKey,
     queryFn: async () => {
       if (!activeId) return [];
@@ -160,27 +169,30 @@ export default function ChatChannel({ channelId, threadId, isPreview = false }: 
         credentials: "include",
       });
       if (!response.ok) {
+        // Don't throw for 403 — private channel access revoked mid-session.
+        // Return empty array so UI doesn't get stuck in an error state.
+        if (response.status === 403) return [];
         throw new Error("Failed to fetch messages");
       }
       return response.json();
     },
     enabled: !!activeId,
-    refetchInterval: 10000, // Reduced from 3s to 10s to prevent excessive re-renders
-    staleTime: 5000, // Data is fresh for 5s, reducing redundant fetches
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    refetchInterval: 10000,
+    staleTime: 5000,
+    refetchOnWindowFocus: false, // Prevents jarring scroll-to-bottom on mobile focus
   });
 
-  // Refetch messages when activeId changes
+  // Auto-scroll to bottom ONLY when new messages arrive AND user is near the bottom.
+  // DO NOT change this to always scroll — it disrupts users reading history
+  // when polling fires every 10 seconds. Only scroll when near bottom.
   useEffect(() => {
-    if (activeId) {
-      refetchMessages();
-    }
-  }, [activeId, refetchMessages]);
+    const newCount = messages.length;
+    const hadNewMessage = newCount > lastMessageCountRef.current;
+    lastMessageCountRef.current = newCount;
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (hadNewMessage && isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   // REST API mutation for sending messages
@@ -207,6 +219,9 @@ export default function ChatChannel({ channelId, threadId, isPreview = false }: 
       queryClient.invalidateQueries({ queryKey: queryKey });
       setMessageInput("");
       setStagedImage(null);
+      // Always scroll to bottom after the user sends a message.
+      isNearBottomRef.current = true;
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     },
     onError: (error) => {
       console.error("Error sending message:", error);
@@ -373,6 +388,23 @@ export default function ChatChannel({ channelId, threadId, isPreview = false }: 
     }
   };
 
+  // Track near-bottom by listening to scroll events that bubble up from
+  // the Radix ScrollArea viewport. Uses passive listener for mobile performance.
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const wrapper = scrollWrapperRef.current;
+    if (!wrapper) return;
+    // The Radix viewport is the first element with overflow scroll inside the wrapper
+    const viewport = wrapper.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+    if (!viewport) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150;
+    };
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
     <div className="flex flex-col h-full bg-background relative">
       {/* Header - Optional, sometimes handled by parent */}
@@ -381,7 +413,7 @@ export default function ChatChannel({ channelId, threadId, isPreview = false }: 
         <h2 className="text-lg font-semibold">Chat</h2>
       </div> */}
 
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden" ref={scrollWrapperRef}>
         <ScrollArea className="flex-1 [&>[data-radix-scroll-area-viewport]]:h-full [&>[data-radix-scroll-area-viewport]>div]:min-h-full [&>[data-radix-scroll-area-viewport]>div]:flex [&>[data-radix-scroll-area-viewport]>div]:flex-col">
           <div className="flex flex-col min-h-full px-4 py-4">
             {/* Spacer that grows to push messages to bottom */}
