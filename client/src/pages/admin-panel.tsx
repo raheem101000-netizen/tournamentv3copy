@@ -375,7 +375,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container max-w-7xl mx-auto px-4 py-6">
         <Tabs defaultValue="achievements" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="flex w-full overflow-x-auto">
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
             <TabsTrigger value="servers">Servers</TabsTrigger>

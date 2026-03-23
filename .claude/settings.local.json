@@ -8,7 +8,18 @@
       "Bash(git push:*)",
       "Bash(git config:*)",
       "Bash(git remote:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm run:*)",
+      "Bash(npm install:*)",
+      "Bash(./node_modules/.bin/drizzle-kit push:*)",
+      "Bash(./node_modules/.bin/drizzle-kit --version)",
+      "Bash(./node_modules/.bin/drizzle-kit --help)",
+      "Bash(./node_modules/.bin/drizzle-kit push:pg 2>&1)",
+      "Bash(psql:*)",
+      "Bash(node:*)",
+      "Bash(cp /tmp/migrate.mts /Users/abdirashiidsammantar/Tourniv3/tournamentv3copy/migrate_channel_members.mts)",
+      "Bash(npx tsx:*)",
+      "Bash(ls .env*)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { MobileLayout } from "@/components/layouts/MobileLayout";
@@ -65,6 +65,10 @@ export default function PreviewAccount() {
 
   const { user: authUser } = useAuth();
   const { toast } = useToast();
+
+  // Latch admin status — once confirmed, never revert (prevents shield from disappearing on re-renders)
+  const isAdminLatchRef = useRef(false);
+  if ((authUser as any)?.isAdmin) isAdminLatchRef.current = true;
 
   const currentUser = authUser ? {
     username: authUser.username,
@@ -308,7 +312,7 @@ export default function PreviewAccount() {
               {isOwnProfile && (
                 <>
                   {/* Admin Panel link - only for admins */}
-                  {(authUser as any)?.isAdmin && (
+                  {isAdminLatchRef.current && (
                     <Button
                       size="icon"
                       variant="ghost"
