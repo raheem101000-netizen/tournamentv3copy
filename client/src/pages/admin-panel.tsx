@@ -791,7 +791,7 @@ export default function AdminPanel() {
                   {supportTickets?.map((ticket) => (
                     <div
                       key={ticket.id}
-                      className={`p-4 border rounded-lg space-y-2 cursor-pointer hover:bg-muted/30 transition-colors ${ticket.status === "new" ? "border-primary/40 bg-primary/5" : ""}`}
+                      className={`p-4 border rounded-lg space-y-2 cursor-pointer hover:bg-muted/30 transition-colors overflow-hidden ${ticket.status === "new" ? "border-primary/40 bg-primary/5" : ""}`}
                       onClick={() => {
                         if (ticket.status === "new") markTicketReadMutation.mutate(ticket.id);
                       }}
@@ -812,7 +812,7 @@ export default function AdminPanel() {
                         <p>Email: <span className="text-foreground">{ticket.email}</span></p>
                         {ticket.discordUsername && <p>Discord: <span className="text-foreground">{ticket.discordUsername}</span></p>}
                       </div>
-                      <p className="text-sm whitespace-pre-wrap">{ticket.message}</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{ticket.message}</p>
                     </div>
                   ))}
                 </div>
