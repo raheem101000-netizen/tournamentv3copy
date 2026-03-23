@@ -564,7 +564,7 @@ export default function AccountSettings() {
               {supportSubmitted ? (
                 <div className="flex flex-col items-center gap-4 py-6 text-center">
                   <p className="font-semibold">Message Sent!</p>
-                  <p className="text-sm text-muted-foreground">We've received your message and will get back to you soon.</p>
+                  <p className="text-sm text-muted-foreground">We've received your message and will get back to you via email or Discord soon.</p>
                   <Button onClick={() => { setSupportSubmitted(false); setSupportForm({ email: "", discordUsername: "", subject: "", message: "" }); }} className="w-full">Send Another</Button>
                 </div>
               ) : (
