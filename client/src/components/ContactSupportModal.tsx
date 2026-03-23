@@ -26,7 +26,6 @@ export function ContactSupportModal({ open, onClose }: ContactSupportModalProps)
   const [submitted, setSubmitted] = useState(false);
 
   const [form, setForm] = useState({
-    platformUsername: (user as any)?.username || "",
     email: "",
     discordUsername: "",
     subject: "",
@@ -36,7 +35,7 @@ export function ContactSupportModal({ open, onClose }: ContactSupportModalProps)
   const submitMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("POST", "/api/support-tickets", {
-        platformUsername: form.platformUsername || undefined,
+        platformUsername: (user as any)?.username || "Not logged in",
         email: form.email,
         discordUsername: form.discordUsername || undefined,
         subject: form.subject,
@@ -58,7 +57,6 @@ export function ContactSupportModal({ open, onClose }: ContactSupportModalProps)
   function handleClose() {
     setSubmitted(false);
     setForm({
-      platformUsername: (user as any)?.username || "",
       email: "",
       discordUsername: "",
       subject: "",
@@ -88,17 +86,6 @@ export function ContactSupportModal({ open, onClose }: ContactSupportModalProps)
           </div>
         ) : (
           <div className="space-y-4">
-            {user && (
-              <div className="space-y-1">
-                <Label>Platform Username</Label>
-                <Input
-                  value={form.platformUsername}
-                  onChange={(e) => setForm({ ...form, platformUsername: e.target.value })}
-                  placeholder="Your username"
-                />
-              </div>
-            )}
-
             <div className="space-y-1">
               <Label>Email <span className="text-destructive">*</span></Label>
               <Input

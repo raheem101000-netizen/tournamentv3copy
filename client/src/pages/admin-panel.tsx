@@ -380,8 +380,6 @@ export default function AdminPanel() {
             <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
             <TabsTrigger value="servers">Servers</TabsTrigger>
             <TabsTrigger value="achievements">Achievements</TabsTrigger>
-            <TabsTrigger value="reports">Reports</TabsTrigger>
-            <TabsTrigger value="customer-service">Support</TabsTrigger>
             <TabsTrigger value="support-tickets" className="relative">
               Tickets
               {supportTickets?.some((t) => t.status === "new") && (
@@ -776,157 +774,6 @@ export default function AdminPanel() {
             </Card>
           </TabsContent>
 
-          {/* Reports Tab */}
-          <TabsContent value="reports" className="space-y-6 mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>User Reports</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {reports?.map((r) => (
-                    <div
-                      key={r.id}
-                      className="p-4 border rounded-lg space-y-2"
-                      data-testid={`report-${r.id}`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-semibold">{r.reason}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Reported by: {r.reportedBy}
-                          </p>
-                        </div>
-                        <Badge
-                          variant={
-                            r.status === "pending"
-                              ? "secondary"
-                              : r.status === "resolved"
-                                ? "default"
-                                : "outline"
-                          }
-                        >
-                          {r.status}
-                        </Badge>
-                      </div>
-                      {r.description && (
-                        <p className="text-sm">{r.description}</p>
-                      )}
-                      {r.status === "pending" && (
-                        <div className="flex gap-2 pt-2">
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              resolveReportMutation.mutate({
-                                reportId: r.id,
-                                status: "resolved",
-                              })
-                            }
-                            disabled={resolveReportMutation.isPending}
-                            data-testid={`button-resolve-${r.id}`}
-                          >
-                            Resolve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              resolveReportMutation.mutate({
-                                reportId: r.id,
-                                status: "dismissed",
-                              })
-                            }
-                            disabled={resolveReportMutation.isPending}
-                            data-testid={`button-dismiss-${r.id}`}
-                          >
-                            Dismiss
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Customer Service Tab */}
-          <TabsContent value="customer-service" className="space-y-6 mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Customer Service Messages</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {customerServiceMessages?.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="p-4 border rounded-lg space-y-2"
-                      data-testid={`cs-message-${msg.id}`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-semibold">{msg.category}</p>
-                          <p className="text-sm text-muted-foreground">
-                            From: {msg.userId}
-                          </p>
-                        </div>
-                        <Badge
-                          variant={
-                            msg.status === "new"
-                              ? "secondary"
-                              : msg.status === "in_progress"
-                                ? "outline"
-                                : "default"
-                          }
-                        >
-                          {msg.status}
-                        </Badge>
-                      </div>
-                      <p className="text-sm">{msg.message}</p>
-                      {msg.status !== "resolved" && (
-                        <div className="space-y-2 pt-2">
-                          <Textarea
-                            placeholder="Your response..."
-                            value={reportResponse[msg.id] || ""}
-                            onChange={(e) =>
-                              setReportResponse((p) => ({
-                                ...p,
-                                [msg.id]: e.target.value,
-                              }))
-                            }
-                            data-testid={`textarea-response-${msg.id}`}
-                          />
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              respondToCSMutation.mutate({
-                                messageId: msg.id,
-                                response: reportResponse[msg.id],
-                              })
-                            }
-                            disabled={
-                              !reportResponse[msg.id] || respondToCSMutation.isPending
-                            }
-                            data-testid={`button-respond-${msg.id}`}
-                          >
-                            Send Response
-                          </Button>
-                        </div>
-                      )}
-                      {msg.response && (
-                        <div className="p-2 bg-muted rounded text-sm">
-                          <p className="font-semibold mb-1">Response:</p>
-                          <p>{msg.response}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           {/* Support Tickets Tab */}
           <TabsContent value="support-tickets" className="space-y-6 mt-6">
             <Card>
@@ -961,7 +808,7 @@ export default function AdminPanel() {
                         </span>
                       </div>
                       <div className="text-xs text-muted-foreground space-y-0.5">
-                        {ticket.platformUsername && <p>Platform: <span className="text-foreground">{ticket.platformUsername}</span></p>}
+                        <p>Submitted by: <span className="text-foreground">{ticket.platformUsername || "Not logged in"}</span></p>
                         <p>Email: <span className="text-foreground">{ticket.email}</span></p>
                         {ticket.discordUsername && <p>Discord: <span className="text-foreground">{ticket.discordUsername}</span></p>}
                       </div>
