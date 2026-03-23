@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -63,6 +64,27 @@ const passwordSchema = z.object({
 export default function AccountSettings() {
   const { toast } = useToast();
   const { user: authUser, refetchUser, logout } = useAuth();
+
+  const [supportForm, setSupportForm] = useState({ email: "", discordUsername: "", subject: "", message: "" });
+  const [supportSubmitted, setSupportSubmitted] = useState(false);
+
+  const supportMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/support-tickets", {
+        platformUsername: (authUser as any)?.username || "Not logged in",
+        email: supportForm.email,
+        discordUsername: supportForm.discordUsername || undefined,
+        subject: supportForm.subject,
+        message: supportForm.message,
+      });
+    },
+    onSuccess: () => {
+      setSupportSubmitted(true);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to send message.", variant: "destructive" });
+    },
+  });
 
   const { data: user, isLoading } = useQuery<UserType>({
     queryKey: [`/api/users/${authUser?.id}`],
@@ -287,8 +309,8 @@ export default function AccountSettings() {
             Achievements
           </TabsTrigger>
           <TabsTrigger value="preferences" className="flex-1 min-w-[100px] data-[state=active]:bg-primary/10 data-[state=active]:text-primary" data-testid="tab-preferences">
-            <Globe className="w-4 h-4 mr-2" />
-            Preferences
+            <HelpCircle className="w-4 h-4 mr-2" />
+            Support
           </TabsTrigger>
           <TabsTrigger value="danger" className="flex-1 min-w-[100px] data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive" data-testid="tab-danger">
             <UserX className="w-4 h-4 mr-2" />
@@ -535,38 +557,39 @@ export default function AccountSettings() {
         <TabsContent value="preferences" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Language & Preferences</CardTitle>
-              <CardDescription>Customize your experience</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="language">Language</Label>
-                <Select defaultValue={user?.language || "en"} data-testid="select-language">
-                  <SelectTrigger id="language">
-                    <SelectValue placeholder="Select language" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="en">English</SelectItem>
-                    <SelectItem value="es">Español</SelectItem>
-                    <SelectItem value="fr">Français</SelectItem>
-                    <SelectItem value="de">Deutsch</SelectItem>
-                    <SelectItem value="ja">日本語</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Support</CardTitle>
+              <CardTitle>Contact Support</CardTitle>
               <CardDescription>Get help when you need it</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button variant="outline" className="w-full" data-testid="button-contact-support">
-                <HelpCircle className="w-4 h-4 mr-2" />
-                Contact Support
-              </Button>
+              {supportSubmitted ? (
+                <div className="flex flex-col items-center gap-4 py-6 text-center">
+                  <p className="font-semibold">Message Sent!</p>
+                  <p className="text-sm text-muted-foreground">We've received your message and will get back to you soon.</p>
+                  <Button onClick={() => { setSupportSubmitted(false); setSupportForm({ email: "", discordUsername: "", subject: "", message: "" }); }} className="w-full">Send Another</Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label>Email <span className="text-destructive">*</span></Label>
+                    <Input type="email" value={supportForm.email} onChange={(e) => setSupportForm({ ...supportForm, email: e.target.value })} placeholder="your@email.com" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Discord Username</Label>
+                    <Input value={supportForm.discordUsername} onChange={(e) => setSupportForm({ ...supportForm, discordUsername: e.target.value })} placeholder="username#0000" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Subject <span className="text-destructive">*</span></Label>
+                    <Input value={supportForm.subject} onChange={(e) => setSupportForm({ ...supportForm, subject: e.target.value })} placeholder="What's this about?" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Message <span className="text-destructive">*</span></Label>
+                    <Textarea value={supportForm.message} onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })} placeholder="Describe your issue or question..." rows={4} />
+                  </div>
+                  <Button onClick={() => supportMutation.mutate()} disabled={!supportForm.email || !supportForm.subject || !supportForm.message || supportMutation.isPending} className="w-full">
+                    {supportMutation.isPending ? "Sending..." : "Send Message"}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
