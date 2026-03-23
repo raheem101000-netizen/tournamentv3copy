@@ -6828,6 +6828,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get platform stats (admin only)
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+    try {
+      const [
+        totalUsers,
+        totalTournaments,
+        totalServers,
+        newUsersThisMonth,
+        newTournamentsThisMonth,
+        uniqueServerOwners,
+        totalRegistrations,
+        activeTournaments,
+      ] = await Promise.all([
+        pool.query("SELECT COUNT(*) FROM users"),
+        pool.query("SELECT COUNT(*) FROM tournaments"),
+        pool.query("SELECT COUNT(*) FROM servers"),
+        pool.query("SELECT COUNT(*) FROM users WHERE created_at >= date_trunc('month', now())"),
+        pool.query("SELECT COUNT(*) FROM tournaments WHERE created_at >= date_trunc('month', now())"),
+        pool.query("SELECT COUNT(DISTINCT owner_id) FROM servers"),
+        pool.query("SELECT COUNT(*) FROM registrations"),
+        pool.query("SELECT COUNT(*) FROM (SELECT tournament_id FROM registrations GROUP BY tournament_id HAVING COUNT(*) >= 2) t"),
+      ]);
+      res.json({
+        totalUsers: parseInt(totalUsers.rows[0].count),
+        totalTournaments: parseInt(totalTournaments.rows[0].count),
+        totalServers: parseInt(totalServers.rows[0].count),
+        newUsersThisMonth: parseInt(newUsersThisMonth.rows[0].count),
+        newTournamentsThisMonth: parseInt(newTournamentsThisMonth.rows[0].count),
+        uniqueServerOwners: parseInt(uniqueServerOwners.rows[0].count),
+        totalRegistrations: parseInt(totalRegistrations.rows[0].count),
+        activeTournaments: parseInt(activeTournaments.rows[0].count),
+      });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Check if current user is admin
   app.get("/api/admin/check", async (req, res) => {
     try {

@@ -92,6 +92,19 @@ export default function AdminPanel() {
     queryKey: ["/api/admin/achievements"],
   });
 
+  const { data: stats } = useQuery<{
+    totalUsers: number;
+    totalTournaments: number;
+    totalServers: number;
+    newUsersThisMonth: number;
+    newTournamentsThisMonth: number;
+    uniqueServerOwners: number;
+    totalRegistrations: number;
+    activeTournaments: number;
+  }>({
+    queryKey: ["/api/admin/stats"],
+  });
+
   const { data: servers } = useQuery<ServerType[]>({
     queryKey: ["/api/admin/servers"],
   });
@@ -380,6 +393,7 @@ export default function AdminPanel() {
             <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
             <TabsTrigger value="servers">Servers</TabsTrigger>
             <TabsTrigger value="achievements">Achievements</TabsTrigger>
+            <TabsTrigger value="stats">Stats</TabsTrigger>
             <TabsTrigger value="support-tickets" className="relative">
               Tickets
               {supportTickets?.some((t) => t.status === "new") && (
@@ -772,6 +786,31 @@ export default function AdminPanel() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Stats Tab */}
+          <TabsContent value="stats" className="mt-6">
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { label: "Total Users", value: stats?.totalUsers },
+                { label: "Total Tournaments", value: stats?.totalTournaments },
+                { label: "Total Servers", value: stats?.totalServers },
+                { label: "New Users This Month", value: stats?.newUsersThisMonth },
+                { label: "New Tournaments This Month", value: stats?.newTournamentsThisMonth },
+                { label: "Unique Server Owners", value: stats?.uniqueServerOwners },
+                { label: "Total Tournament Registrations", value: stats?.totalRegistrations },
+                { label: "Active Tournaments", value: stats?.activeTournaments },
+              ].map(({ label, value }) => (
+                <Card key={label}>
+                  <CardContent className="pt-6 pb-5 flex flex-col items-center text-center">
+                    <span className="text-4xl font-bold">
+                      {value ?? "—"}
+                    </span>
+                    <span className="text-sm text-muted-foreground mt-2">{label}</span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
 
           {/* Support Tickets Tab */}
