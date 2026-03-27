@@ -88,6 +88,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
   const [isBracketSubmitOpen, setIsBracketSubmitOpen] = useState(false);
   const [roundName, setRoundName] = useState("");
   const [isEliminateTeamDialogOpen, setIsEliminateTeamDialogOpen] = useState(false);
+  const [isRestartBracketDialogOpen, setIsRestartBracketDialogOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [expandedRegistrationId, setExpandedRegistrationId] = useState<string | null>(null);
@@ -521,6 +522,23 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     }
   });
 
+  const restartBracketMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', `/api/tournaments/${selectedTournamentId}/restart-bracket`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/matches`] });
+      setIsRestartBracketDialogOpen(false);
+      toast({
+        title: "Bracket Restarted",
+        description: "The bracket has been reset and regenerated from scratch.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleViewTournament = (id: string) => {
     setSelectedTournamentId(id);
     setActiveTab("overview");
@@ -852,17 +870,30 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
           {selectedTournament.format !== 'league' && selectedTournament.format !== 'round_robin' && (
           <TabsContent value="bracket" className="w-full px-4 sm:px-6 py-4">
             {selectedTournamentMatches.length > 0 ? (
-              <BracketView
-                matches={selectedTournamentMatches}
-                teams={selectedTournamentTeams}
-                format={selectedTournament.format}
-                onMatchClick={(matchId) => {
-                  const m = selectedTournamentMatches.find(mx => mx.id === matchId);
-                  if (!m?.team1Id || !m?.team2Id) return;
-                  setSelectedMatchId(matchId);
-                  setIsBracketSubmitOpen(true);
-                }}
-              />
+              <div>
+                {isOrganizer && (
+                  <div className="flex justify-end mb-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsRestartBracketDialogOpen(true)}
+                    >
+                      Restart Bracket
+                    </Button>
+                  </div>
+                )}
+                <BracketView
+                  matches={selectedTournamentMatches}
+                  teams={selectedTournamentTeams}
+                  format={selectedTournament.format}
+                  onMatchClick={(matchId) => {
+                    const m = selectedTournamentMatches.find(mx => mx.id === matchId);
+                    if (!m?.team1Id || !m?.team2Id) return;
+                    setSelectedMatchId(matchId);
+                    setIsBracketSubmitOpen(true);
+                  }}
+                />
+              </div>
             ) : (
               <Card className="p-8">
                 <div className="text-center space-y-4">
@@ -1693,6 +1724,30 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                 data-testid="button-confirm-create-match"
               >
                 {createCustomMatchMutation.isPending ? "Creating..." : "Create Match"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Restart Bracket Confirmation Dialog */}
+        <Dialog open={isRestartBracketDialogOpen} onOpenChange={setIsRestartBracketDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Restart Bracket</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to restart the bracket? This will delete all existing matches and match chats and cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsRestartBracketDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => restartBracketMutation.mutate()}
+                disabled={restartBracketMutation.isPending}
+              >
+                {restartBracketMutation.isPending ? "Restarting..." : "Restart Bracket"}
               </Button>
             </DialogFooter>
           </DialogContent>

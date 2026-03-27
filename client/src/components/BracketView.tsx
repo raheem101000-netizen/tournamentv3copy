@@ -325,10 +325,34 @@ function SingleEliminationBracket({
     return distance < names.length ? names[distance] : `Round ${round}`;
   }
 
-  function sortedRoundMatches(side: "LEFT" | "RIGHT", round: number): Match[] {
-    return matches
-      .filter((m) => m.side === side && m.round === round)
-      .sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
+  /**
+   * Distribute matches evenly: Left = ceil(total/2), Right = floor(total/2).
+   * Stored LEFT and RIGHT matches are sorted by matchIndex, paired as (L[k], R[k]),
+   * then even-indexed pairs go to visual LEFT and odd-indexed pairs to visual RIGHT.
+   * When only one pair exists the stored sides are assigned directly.
+   */
+  function visualRoundMatches(side: "LEFT" | "RIGHT", round: number): Match[] {
+    const sort = (arr: Match[]) =>
+      arr.slice().sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
+    const L = sort(matches.filter((m) => m.side === "LEFT"  && m.round === round));
+    const R = sort(matches.filter((m) => m.side === "RIGHT" && m.round === round));
+    const M = Math.max(L.length, R.length);
+    const result: Match[] = [];
+
+    if (M <= 1) {
+      if (side === "LEFT"  && L[0]) result.push(L[0]);
+      if (side === "RIGHT" && R[0]) result.push(R[0]);
+      return result;
+    }
+
+    for (let k = 0; k < M; k++) {
+      const pairGoesLeft = k % 2 === 0;
+      if ((side === "LEFT") === pairGoesLeft) {
+        if (k < L.length) result.push(L[k]);
+        if (k < R.length) result.push(R[k]);
+      }
+    }
+    return result;
   }
 
   // 2-team bracket: just show the FINAL
@@ -354,6 +378,7 @@ function SingleEliminationBracket({
 
   return (
     <div className="w-full overflow-x-auto pb-6">
+      <div className="w-fit mx-auto">
       {/* Round name headers */}
       <div className="flex mb-1 min-w-max">
         {leftRounds.map((r) => (
@@ -377,7 +402,7 @@ function SingleEliminationBracket({
         {leftRounds.map((r) => (
           <RoundColumn
             key={`left-${r}`}
-            roundMatches={sortedRoundMatches("LEFT", r)}
+            roundMatches={visualRoundMatches("LEFT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="right"
@@ -399,7 +424,7 @@ function SingleEliminationBracket({
         {rightRoundsDisplay.map((r) => (
           <RoundColumn
             key={`right-${r}`}
-            roundMatches={sortedRoundMatches("RIGHT", r)}
+            roundMatches={visualRoundMatches("RIGHT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="left"
@@ -408,6 +433,7 @@ function SingleEliminationBracket({
             onMatchClick={onMatchClick}
           />
         ))}
+      </div>
       </div>
     </div>
   );
