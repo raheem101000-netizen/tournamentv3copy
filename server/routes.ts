@@ -86,6 +86,7 @@ import {
   insertTeamMemberSchema,
   insertServerMemberSchema,
   leaguePairTracker,
+  messageThreads,
   insertSupportTicketSchema,
 } from "../shared/schema.js";
 import { z } from "zod";
@@ -2967,6 +2968,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
       log('ERROR', 'Generate fixtures failed', { error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Restart bracket: delete all existing matches + threads, regenerate from scratch
+  app.post("/api/tournaments/:tournamentId/restart-bracket", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const tournament = await storage.getTournament(req.params.tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ error: "Tournament not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      let isServerOwner = false;
+      let hasTournamentManagerRole = false;
+      if (tournament.serverId) {
+        const server = await storage.getServer(tournament.serverId);
+        isServerOwner = server?.ownerId === req.session.userId;
+        const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId);
+        hasTournamentManagerRole = perms.includes("manage_tournaments");
+      }
+      const isAuthorized =
+        tournament.organizerId === req.session.userId ||
+        user?.isAdmin ||
+        isServerOwner ||
+        hasTournamentManagerRole;
+
+      if (!isAuthorized) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const teams = await storage.getTeamsByTournament(tournament.id);
+      const activeTeams = teams.filter((t: any) => !t.isRemoved);
+      if (activeTeams.length < 2) {
+        return res.status(400).json({ error: "Need at least 2 active teams to generate matches" });
+      }
+
+      // Delete all existing matches and their threads
+      const { eq } = await import("drizzle-orm");
+      const existingMatches = await storage.getMatchesByTournament(tournament.id);
+      for (const m of existingMatches) {
+        await db.delete(messageThreads).where(eq(messageThreads.matchId, m.id));
+        await storage.deleteMatch(m.id);
+      }
+
+      // Regenerate bracket
+      let generatedMatches;
+      if (tournament.format === "single_elimination") {
+        ({ matches: generatedMatches } = generateSingleEliminationBracket(tournament.id, activeTeams));
+      } else if (tournament.format === "swiss") {
+        ({ matches: generatedMatches } = generateSwissSystemRound(tournament.id, activeTeams, 1, []));
+      } else {
+        ({ matches: generatedMatches } = generateRoundRobinBracket(tournament.id, activeTeams));
+      }
+
+      const createdMatches = [];
+      for (const matchData of generatedMatches) {
+        const match = await storage.createMatch(matchData);
+        createdMatches.push(match);
+      }
+
+      // Create threads for real matches only
+      for (const match of createdMatches) {
+        if (tournament.format === "single_elimination" && (!match.team1Id || !match.team2Id)) {
+          continue;
+        }
+        await createMatchThreadsForAllMembers(match.id, match.team1Id, match.team2Id, match.roundName ?? undefined);
+      }
+
+      res.status(201).json({
+        message: "Bracket restarted successfully",
+        matchCount: createdMatches.length,
+      });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
       res.status(500).json({ error: error.message });
     }
   });
