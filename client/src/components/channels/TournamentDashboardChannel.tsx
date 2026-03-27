@@ -851,7 +851,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
 
           {selectedTournament.format !== 'league' && selectedTournament.format !== 'round_robin' && (
           <TabsContent value="bracket" className="w-full px-4 sm:px-6 py-4">
-            {selectedTournamentMatches.length > 0 ? (
+            {selectedTournamentMatches.some(m => m.side !== 'FINAL' || m.team1Id || m.team2Id) ? (
               <BracketView
                 matches={selectedTournamentMatches}
                 teams={selectedTournamentTeams}

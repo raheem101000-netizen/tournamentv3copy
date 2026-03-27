@@ -2731,10 +2731,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (tournament.format === 'single_elimination') {
         const existingMatches = await storage.getMatchesByTournament(tournament.id);
         const existingBracketMatches = existingMatches.filter((m: any) => m.matchType !== 'manual');
-        if (existingBracketMatches.length > 0) {
+        // A real bracket has non-FINAL matches, or a FINAL with at least one team assigned.
+        const hasRealBracket = existingBracketMatches.some((m: any) => m.side !== 'FINAL' || m.team1Id || m.team2Id);
+        if (hasRealBracket) {
           return res.status(409).json({
             error: "Bracket already generated. For knockout tournaments the bracket is managed automatically — match chats are created as each round's players are confirmed."
           });
+        }
+        // Clean up any orphaned phantom matches (e.g. a lone FINAL with no teams) before re-generating.
+        for (const m of existingBracketMatches) {
+          await storage.deleteMatch(m.id);
         }
       }
 
