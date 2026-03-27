@@ -109,8 +109,8 @@ export function generateSingleEliminationBracket(
       let team2: Team | null = null;
 
       if (r === 1) {
-        team1 = teams[i * 4] ?? null;
-        team2 = teams[i * 4 + 1] ?? null;
+        team1 = teams[i * 2] ?? null;
+        team2 = teams[i * 2 + 1] ?? null;
       }
 
       let nextMatchId: string | null;
@@ -133,8 +133,8 @@ export function generateSingleEliminationBracket(
       let team2: Team | null = null;
 
       if (r === 1) {
-        team1 = teams[i * 4 + 2] ?? null;
-        team2 = teams[i * 4 + 3] ?? null;
+        team1 = teams[halfSize + i * 2] ?? null;
+        team2 = teams[halfSize + i * 2 + 1] ?? null;
       }
 
       let nextMatchId: string | null;
