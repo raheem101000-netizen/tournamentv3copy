@@ -26,12 +26,12 @@ interface BracketViewProps {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Height (px) of one R1 slot — card ~60px + 12px gap */
-const SLOT_H = 72;
+/** Height (px) of one R1 slot — card ~72px + 16px gap */
+const SLOT_H = 88;
 /** Fixed width of each round column */
-const COL_W = 140;
+const COL_W = 220;
 /** Width of connector stub */
-const STUB_W = 10;
+const STUB_W = 20;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,14 +57,19 @@ function MatchBox({
   const isCompleted = match.status === "completed";
   const isWinner = (id?: string | null) => !!match.winnerId && match.winnerId === id;
 
-  // Rule 1 & 4: BYE matches are never shown — the player already appears in
-  // the next round via winner propagation. Return null so the slot is empty.
-  if (match.isBye) return null;
+  if (match.isBye) {
+    return (
+      <div className="select-none rounded-lg border border-dashed border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        <span className="font-medium">{getDisplayName(team1, match.team1Id)}</span>
+        <span className="ml-2 text-xs opacity-60">BYE</span>
+      </div>
+    );
+  }
 
   const isTbd = !match.team1Id && !match.team2Id;
   if (isTbd) {
     return (
-      <div className="select-none rounded-md border border-dashed border-border/30 bg-muted/10 px-2 py-1.5 text-[10px] text-muted-foreground/40 text-center">
+      <div className="select-none rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">
         TBD
       </div>
     );
@@ -73,43 +78,43 @@ function MatchBox({
   return (
     <div
       onClick={onClick}
-      className={`cursor-pointer select-none rounded-md border px-2 py-1.5 text-xs transition-colors hover:bg-accent/50 ${
+      className={`cursor-pointer select-none rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-accent/50 ${
         isCompleted ? "border-border bg-card" : "border-border/70 bg-card/80"
       }`}
     >
       {/* Players on one line: Team1  vs  Team2 */}
-      <div className="flex items-center gap-1 py-px">
-        <div className={`flex items-center gap-0.5 min-w-0 flex-1 ${isWinner(match.team1Id) ? "font-bold text-primary" : ""}`}>
-          {isWinner(match.team1Id) && <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0" />}
+      <div className="flex items-center gap-1.5 py-0.5">
+        <div className={`flex items-center gap-1 min-w-0 flex-1 ${isWinner(match.team1Id) ? "font-bold text-primary" : ""}`}>
+          {isWinner(match.team1Id) && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
           {isCompleted && match.team1Score !== null && (
             <span className="font-mono font-bold tabular-nums shrink-0">{match.team1Score}</span>
           )}
           <span className="truncate">{getDisplayName(team1, match.team1Id)}</span>
         </div>
-        <span className="text-[9px] text-muted-foreground/60 shrink-0 px-0.5">vs</span>
-        <div className={`flex items-center gap-0.5 min-w-0 flex-1 justify-end ${isWinner(match.team2Id) ? "font-bold text-primary" : ""}`}>
+        <span className="text-[10px] text-muted-foreground/60 shrink-0 px-1">vs</span>
+        <div className={`flex items-center gap-1 min-w-0 flex-1 justify-end ${isWinner(match.team2Id) ? "font-bold text-primary" : ""}`}>
           <span className="truncate text-right">{getDisplayName(team2, match.team2Id)}</span>
           {isCompleted && match.team2Score !== null && (
             <span className="font-mono font-bold tabular-nums shrink-0">{match.team2Score}</span>
           )}
-          {isWinner(match.team2Id) && <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0" />}
+          {isWinner(match.team2Id) && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
         </div>
       </div>
 
       {/* Status */}
-      <div className="mt-1 flex items-center gap-0.5">
+      <div className="mt-1.5 flex items-center gap-1">
         {isCompleted ? (
-          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
         ) : match.status === "in_progress" ? (
-          <Clock className="w-2.5 h-2.5 text-blue-500 animate-pulse" />
+          <Clock className="w-3 h-3 text-blue-500 animate-pulse" />
         ) : (
-          <Clock className="w-2.5 h-2.5 text-muted-foreground/40" />
+          <Clock className="w-3 h-3 text-muted-foreground/40" />
         )}
-        <span className="text-[9px] text-muted-foreground capitalize">
+        <span className="text-[10px] text-muted-foreground capitalize">
           {match.status.replace("_", " ")}
         </span>
         {onClick && match.team1Id && match.team2Id && (
-          <MessageSquare className="w-2.5 h-2.5 text-muted-foreground/50 ml-auto" />
+          <MessageSquare className="w-3 h-3 text-muted-foreground/50 ml-auto" />
         )}
       </div>
     </div>
@@ -160,14 +165,13 @@ function RoundColumn({
         const match = roundMatches[i];
         const slotTop = i * slotH;
         // Center the card vertically within its slot
-        const cardTop = slotTop + slotH / 2 - 30; // 30 = approx half card height
+        const cardTop = slotTop + slotH / 2 - 44; // 44 = approx half card height
         const isUpperOfPair = i % 2 === 0;
         const edgeProp = connectorSide === "right" ? "right" : "left";
 
         return (
           <div key={i} className="absolute" style={{ top: cardTop, left: connectorSide === "right" ? 0 : STUB_W, width: COL_W }}>
-            {/* BYE slots are invisible — player already appears in next round */}
-            {match && !match.isBye ? (
+            {match ? (
               <MatchBox
                 match={match}
                 team1={getTeam(match.team1Id)}
@@ -178,11 +182,11 @@ function RoundColumn({
                     : undefined
                 }
               />
-            ) : !match ? (
+            ) : (
               <div className="rounded-lg border border-dashed border-border/20 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/30 text-center">
                 TBD
               </div>
-            ) : null}
+            )}
 
             {/* Tree connector lines */}
             {showConnector && (
@@ -243,7 +247,7 @@ function FinalColumn({
   getTeam: (id: string | null | undefined) => TeamWithMembers | undefined;
   onMatchClick?: (id: string) => void;
 }) {
-  const cardTop = totalH / 2 - 30;
+  const cardTop = totalH / 2 - 44;
   return (
     <div className="relative shrink-0" style={{ width: COL_W + STUB_W * 2, height: totalH }}>
       {/* Left stub (from LEFT side) */}
@@ -321,41 +325,10 @@ function SingleEliminationBracket({
     return distance < names.length ? names[distance] : `Round ${round}`;
   }
 
-  /**
-   * Distribute matches evenly between visual left and right sides.
-   *
-   * Stored LEFT and RIGHT matches are sorted by matchIndex then interleaved
-   * into pairs: pair k = (L[k], R[k]).  Even-indexed pairs go to visual LEFT,
-   * odd-indexed pairs go to visual RIGHT.  This guarantees:
-   *   visual LEFT  = Math.ceil(totalRealMatches / 2)
-   *   visual RIGHT = Math.floor(totalRealMatches / 2)
-   * for every participant count.  When only one pair exists (final round
-   * column, M === 1) the stored sides are assigned directly with no mixing.
-   */
-  function visualRoundMatches(side: "LEFT" | "RIGHT", round: number): Match[] {
-    const sort = (arr: Match[]) =>
-      arr.sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
-    const L = sort(matches.filter((m) => m.side === "LEFT"  && m.round === round));
-    const R = sort(matches.filter((m) => m.side === "RIGHT" && m.round === round));
-    const M = Math.max(L.length, R.length);
-    const result: Match[] = [];
-
-    if (M === 1) {
-      // One stored match per side — assign directly, no interleaving needed
-      if (side === "LEFT"  && L[0]) result.push(L[0]);
-      if (side === "RIGHT" && R[0]) result.push(R[0]);
-      return result;
-    }
-
-    // Pair-interleave: even pair index → visual LEFT, odd → visual RIGHT
-    for (let k = 0; k < M; k++) {
-      const pairGoesLeft = k % 2 === 0;
-      if ((side === "LEFT") === pairGoesLeft) {
-        if (k < L.length) result.push(L[k]);
-        if (k < R.length) result.push(R[k]);
-      }
-    }
-    return result;
+  function sortedRoundMatches(side: "LEFT" | "RIGHT", round: number): Match[] {
+    return matches
+      .filter((m) => m.side === side && m.round === round)
+      .sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
   }
 
   // 2-team bracket: just show the FINAL
@@ -380,10 +353,9 @@ function SingleEliminationBracket({
   }
 
   return (
-    <div className="w-full overflow-x-auto pb-4">
-      <div className="w-fit mx-auto min-w-0">
+    <div className="w-full overflow-x-auto pb-6">
       {/* Round name headers */}
-      <div className="flex mb-1">
+      <div className="flex mb-1 min-w-max">
         {leftRounds.map((r) => (
           <div key={`lh-${r}`} style={{ width: COL_W + STUB_W }} className="px-2 pb-1">
             <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
@@ -405,7 +377,7 @@ function SingleEliminationBracket({
         {leftRounds.map((r) => (
           <RoundColumn
             key={`left-${r}`}
-            roundMatches={visualRoundMatches("LEFT", r)}
+            roundMatches={sortedRoundMatches("LEFT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="right"
@@ -427,7 +399,7 @@ function SingleEliminationBracket({
         {rightRoundsDisplay.map((r) => (
           <RoundColumn
             key={`right-${r}`}
-            roundMatches={visualRoundMatches("RIGHT", r)}
+            roundMatches={sortedRoundMatches("RIGHT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="left"
@@ -436,7 +408,6 @@ function SingleEliminationBracket({
             onMatchClick={onMatchClick}
           />
         ))}
-      </div>
       </div>
     </div>
   );
@@ -490,18 +461,18 @@ function LegacyBracket({
                         <div className="absolute left-0 top-1/2 bg-border" style={{ width: 16, height: 1 }} />
                       )}
                       <div className="flex-1">
-                        {match && !match.isBye ? (
+                        {match ? (
                           <MatchBox
                             match={match}
                             team1={getTeam(match.team1Id)}
                             team2={getTeam(match.team2Id)}
                             onClick={onMatchClick && match.team1Id && match.team2Id ? () => onMatchClick(match.id) : undefined}
                           />
-                        ) : !match ? (
+                        ) : (
                           <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">
                             TBD
                           </div>
-                        ) : null}
+                        )}
                       </div>
                       {showConnector && (
                         <>

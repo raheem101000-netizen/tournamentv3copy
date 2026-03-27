@@ -86,7 +86,6 @@ import {
   insertTeamMemberSchema,
   insertServerMemberSchema,
   leaguePairTracker,
-  messageThreads,
   insertSupportTicketSchema,
 } from "../shared/schema.js";
 import { z } from "zod";
@@ -213,50 +212,6 @@ async function canAccessMatch(userId: string, matchId: string): Promise<boolean>
   }
 
   return false;
-}
-
-/**
- * Resolves any unresolved BYE matches in a tournament bracket and cascades
- * winner propagation until no more byes remain. Safe to call on every bracket
- * load — it is a no-op when there is nothing to resolve.
- */
-async function resolveByeMatches(tournamentId: string, matches: any[]): Promise<void> {
-  const matchById = new Map(matches.map((m: any) => [m.id, { ...m }]));
-
-  function propagateToNext(m: any): void {
-    if (!m.winnerId || !m.nextMatchId) return;
-    const next = matchById.get(m.nextMatchId);
-    if (!next) return;
-    const isFinalSlot = next.side === "FINAL";
-    const isFirstSlot = isFinalSlot ? m.side === "LEFT" : (m.matchIndex ?? 0) % 2 === 0;
-    const slot = isFirstSlot ? "team1Id" : "team2Id";
-    next[slot] = m.winnerId;
-  }
-
-  let anyResolved = true;
-  while (anyResolved) {
-    anyResolved = false;
-    for (const m of matchById.values()) {
-      if (m.winnerId) continue;
-      const hasExactlyOneTeam = (!!m.team1Id) !== (!!m.team2Id);
-      if (!hasExactlyOneTeam) continue;
-      m.winnerId = (m.team1Id ?? m.team2Id)!;
-      m.status = "completed";
-      m.isBye = 1;
-      await storage.updateMatch(m.id, { winnerId: m.winnerId, status: "completed", isBye: 1 });
-      propagateToNext(m);
-      if (m.nextMatchId) {
-        const next = matchById.get(m.nextMatchId);
-        if (next) {
-          const isFinalSlot = next.side === "FINAL";
-          const isFirstSlot = isFinalSlot ? m.side === "LEFT" : (m.matchIndex ?? 0) % 2 === 0;
-          const slot = isFirstSlot ? "team1Id" : "team2Id";
-          await storage.updateMatch(next.id, { [slot]: m.winnerId });
-        }
-      }
-      anyResolved = true;
-    }
-  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1951,16 +1906,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tournaments/:tournamentId/matches", async (req, res) => {
     try {
       const matches = await storage.getMatchesByTournament(req.params.tournamentId);
-      // Auto-resolve any BYE matches that were not cascaded at generation time
-      // (fixes existing broken brackets and is a no-op when everything is healthy)
-      const hasUnresolvedByes = matches.some(
-        (m: any) => !m.winnerId && (!!m.team1Id) !== (!!m.team2Id)
-      );
-      if (hasUnresolvedByes) {
-        await resolveByeMatches(req.params.tournamentId, matches);
-        const resolved = await storage.getMatchesByTournament(req.params.tournamentId);
-        return res.json(resolved);
-      }
       res.json(matches);
     } catch (error: any) {
       logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
@@ -2786,16 +2731,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (tournament.format === 'single_elimination') {
         const existingMatches = await storage.getMatchesByTournament(tournament.id);
         const existingBracketMatches = existingMatches.filter((m: any) => m.matchType !== 'manual');
-        // A real bracket has non-FINAL matches, or a FINAL with at least one team assigned.
-        const hasRealBracket = existingBracketMatches.some((m: any) => m.side !== 'FINAL' || m.team1Id || m.team2Id);
-        if (hasRealBracket) {
+        if (existingBracketMatches.length > 0) {
           return res.status(409).json({
             error: "Bracket already generated. For knockout tournaments the bracket is managed automatically — match chats are created as each round's players are confirmed."
           });
-        }
-        // Clean up any orphaned phantom matches (e.g. a lone FINAL with no teams) before re-generating.
-        for (const m of existingBracketMatches) {
-          await storage.deleteMatch(m.id);
         }
       }
 
@@ -2968,85 +2907,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
       log('ERROR', 'Generate fixtures failed', { error: error.message });
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Restart bracket: delete all existing matches + threads, regenerate from scratch
-  app.post("/api/tournaments/:tournamentId/restart-bracket", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const tournament = await storage.getTournament(req.params.tournamentId);
-      if (!tournament) {
-        return res.status(404).json({ error: "Tournament not found" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      let isServerOwner = false;
-      let hasTournamentManagerRole = false;
-      if (tournament.serverId) {
-        const server = await storage.getServer(tournament.serverId);
-        isServerOwner = server?.ownerId === req.session.userId;
-        const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId);
-        hasTournamentManagerRole = perms.includes("manage_tournaments");
-      }
-      const isAuthorized =
-        tournament.organizerId === req.session.userId ||
-        user?.isAdmin ||
-        isServerOwner ||
-        hasTournamentManagerRole;
-
-      if (!isAuthorized) {
-        return res.status(403).json({ error: "Not authorized" });
-      }
-
-      const teams = await storage.getTeamsByTournament(tournament.id);
-      const activeTeams = teams.filter((t: any) => !t.isRemoved);
-      if (activeTeams.length < 2) {
-        return res.status(400).json({ error: "Need at least 2 active teams to generate matches" });
-      }
-
-      // Delete all existing matches and their threads
-      const { eq } = await import("drizzle-orm");
-      const existingMatches = await storage.getMatchesByTournament(tournament.id);
-      for (const m of existingMatches) {
-        await db.delete(messageThreads).where(eq(messageThreads.matchId, m.id));
-        await storage.deleteMatch(m.id);
-      }
-
-      // Regenerate bracket
-      let generatedMatches;
-      if (tournament.format === "single_elimination") {
-        ({ matches: generatedMatches } = generateSingleEliminationBracket(tournament.id, activeTeams));
-      } else if (tournament.format === "swiss") {
-        ({ matches: generatedMatches } = generateSwissSystemRound(tournament.id, activeTeams, 1, []));
-      } else {
-        ({ matches: generatedMatches } = generateRoundRobinBracket(tournament.id, activeTeams));
-      }
-
-      const createdMatches = [];
-      for (const matchData of generatedMatches) {
-        const match = await storage.createMatch(matchData);
-        createdMatches.push(match);
-      }
-
-      // Create threads for real matches only
-      for (const match of createdMatches) {
-        if (tournament.format === "single_elimination" && (!match.team1Id || !match.team2Id)) {
-          continue;
-        }
-        await createMatchThreadsForAllMembers(match.id, match.team1Id, match.team2Id, match.roundName ?? undefined);
-      }
-
-      res.status(201).json({
-        message: "Bracket restarted successfully",
-        matchCount: createdMatches.length,
-      });
-    } catch (error: any) {
-      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
       res.status(500).json({ error: error.message });
     }
   });
