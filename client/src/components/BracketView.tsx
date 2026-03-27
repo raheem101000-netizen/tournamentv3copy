@@ -325,10 +325,41 @@ function SingleEliminationBracket({
     return distance < names.length ? names[distance] : `Round ${round}`;
   }
 
-  function sortedRoundMatches(side: "LEFT" | "RIGHT", round: number): Match[] {
-    return matches
-      .filter((m) => m.side === side && m.round === round)
-      .sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
+  /**
+   * Distribute matches evenly between visual left and right sides.
+   *
+   * Stored LEFT and RIGHT matches are sorted by matchIndex then interleaved
+   * into pairs: pair k = (L[k], R[k]).  Even-indexed pairs go to visual LEFT,
+   * odd-indexed pairs go to visual RIGHT.  This guarantees:
+   *   visual LEFT  = Math.ceil(totalRealMatches / 2)
+   *   visual RIGHT = Math.floor(totalRealMatches / 2)
+   * for every participant count.  When only one pair exists (final round
+   * column, M === 1) the stored sides are assigned directly with no mixing.
+   */
+  function visualRoundMatches(side: "LEFT" | "RIGHT", round: number): Match[] {
+    const sort = (arr: Match[]) =>
+      arr.sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
+    const L = sort(matches.filter((m) => m.side === "LEFT"  && m.round === round));
+    const R = sort(matches.filter((m) => m.side === "RIGHT" && m.round === round));
+    const M = Math.max(L.length, R.length);
+    const result: Match[] = [];
+
+    if (M === 1) {
+      // One stored match per side — assign directly, no interleaving needed
+      if (side === "LEFT"  && L[0]) result.push(L[0]);
+      if (side === "RIGHT" && R[0]) result.push(R[0]);
+      return result;
+    }
+
+    // Pair-interleave: even pair index → visual LEFT, odd → visual RIGHT
+    for (let k = 0; k < M; k++) {
+      const pairGoesLeft = k % 2 === 0;
+      if ((side === "LEFT") === pairGoesLeft) {
+        if (k < L.length) result.push(L[k]);
+        if (k < R.length) result.push(R[k]);
+      }
+    }
+    return result;
   }
 
   // 2-team bracket: just show the FINAL
@@ -378,7 +409,7 @@ function SingleEliminationBracket({
         {leftRounds.map((r) => (
           <RoundColumn
             key={`left-${r}`}
-            roundMatches={sortedRoundMatches("LEFT", r)}
+            roundMatches={visualRoundMatches("LEFT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="right"
@@ -400,7 +431,7 @@ function SingleEliminationBracket({
         {rightRoundsDisplay.map((r) => (
           <RoundColumn
             key={`right-${r}`}
-            roundMatches={sortedRoundMatches("RIGHT", r)}
+            roundMatches={visualRoundMatches("RIGHT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="left"
