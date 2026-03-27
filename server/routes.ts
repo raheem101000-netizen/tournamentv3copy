@@ -214,6 +214,50 @@ async function canAccessMatch(userId: string, matchId: string): Promise<boolean>
   return false;
 }
 
+/**
+ * Resolves any unresolved BYE matches in a tournament bracket and cascades
+ * winner propagation until no more byes remain. Safe to call on every bracket
+ * load — it is a no-op when there is nothing to resolve.
+ */
+async function resolveByeMatches(tournamentId: string, matches: any[]): Promise<void> {
+  const matchById = new Map(matches.map((m: any) => [m.id, { ...m }]));
+
+  function propagateToNext(m: any): void {
+    if (!m.winnerId || !m.nextMatchId) return;
+    const next = matchById.get(m.nextMatchId);
+    if (!next) return;
+    const isFinalSlot = next.side === "FINAL";
+    const isFirstSlot = isFinalSlot ? m.side === "LEFT" : (m.matchIndex ?? 0) % 2 === 0;
+    const slot = isFirstSlot ? "team1Id" : "team2Id";
+    next[slot] = m.winnerId;
+  }
+
+  let anyResolved = true;
+  while (anyResolved) {
+    anyResolved = false;
+    for (const m of matchById.values()) {
+      if (m.winnerId) continue;
+      const hasExactlyOneTeam = (!!m.team1Id) !== (!!m.team2Id);
+      if (!hasExactlyOneTeam) continue;
+      m.winnerId = (m.team1Id ?? m.team2Id)!;
+      m.status = "completed";
+      m.isBye = 1;
+      await storage.updateMatch(m.id, { winnerId: m.winnerId, status: "completed", isBye: 1 });
+      propagateToNext(m);
+      if (m.nextMatchId) {
+        const next = matchById.get(m.nextMatchId);
+        if (next) {
+          const isFinalSlot = next.side === "FINAL";
+          const isFirstSlot = isFinalSlot ? m.side === "LEFT" : (m.matchIndex ?? 0) % 2 === 0;
+          const slot = isFirstSlot ? "team1Id" : "team2Id";
+          await storage.updateMatch(next.id, { [slot]: m.winnerId });
+        }
+      }
+      anyResolved = true;
+    }
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // SkyView Tracing Middleware
   // Must be first to capture all requests
@@ -1906,6 +1950,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tournaments/:tournamentId/matches", async (req, res) => {
     try {
       const matches = await storage.getMatchesByTournament(req.params.tournamentId);
+      // Auto-resolve any BYE matches that were not cascaded at generation time
+      // (fixes existing broken brackets and is a no-op when everything is healthy)
+      const hasUnresolvedByes = matches.some(
+        (m: any) => !m.winnerId && (!!m.team1Id) !== (!!m.team2Id)
+      );
+      if (hasUnresolvedByes) {
+        await resolveByeMatches(req.params.tournamentId, matches);
+        const resolved = await storage.getMatchesByTournament(req.params.tournamentId);
+        return res.json(resolved);
+      }
       res.json(matches);
     } catch (error: any) {
       logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });

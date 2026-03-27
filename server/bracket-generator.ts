@@ -173,22 +173,40 @@ export function generateSingleEliminationBracket(
     matchType: "auto" as const,
   });
 
-  // ── Propagate byes into next rounds ──────────────────────────────────────
-  // For any R1 bye winner, fill the appropriate slot in the next match.
+  // ── Propagate byes into next rounds (cascading) ─────────────────────────────
   const matchById = new Map(result.map((m) => [m.id, m]));
+
+  function propagateToNext(m: BracketMatch): void {
+    if (!m.winnerId || !m.nextMatchId) return;
+    const next = matchById.get(m.nextMatchId);
+    if (!next) return;
+    const isFinalSlot = next.side === "FINAL";
+    const isFirstSlot = isFinalSlot ? m.side === "LEFT" : (m.matchIndex ?? 0) % 2 === 0;
+    if (isFirstSlot) {
+      next.team1Id = m.winnerId;
+    } else {
+      next.team2Id = m.winnerId;
+    }
+  }
+
+  // First pass: propagate all R1 bye winners one level down
   for (const m of result) {
-    if (m.isBye && m.winnerId && m.nextMatchId) {
-      const next = matchById.get(m.nextMatchId);
-      if (next) {
-        // When feeding into the FINAL, LEFT→team1 and RIGHT→team2
-        const isFinalSlot = next.side === "FINAL";
-        const isFirstSlot = isFinalSlot ? m.side === "LEFT" : m.matchIndex % 2 === 0;
-        if (isFirstSlot) {
-          next.team1Id = m.winnerId;
-        } else {
-          next.team2Id = m.winnerId;
-        }
-      }
+    if (m.isBye && m.winnerId) propagateToNext(m);
+  }
+
+  // Cascade: any match that became a bye due to propagation gets resolved immediately
+  let anyResolved = true;
+  while (anyResolved) {
+    anyResolved = false;
+    for (const m of result) {
+      if (m.winnerId) continue;
+      const hasExactlyOneTeam = (!!m.team1Id) !== (!!m.team2Id);
+      if (!hasExactlyOneTeam) continue;
+      m.isBye = 1;
+      m.winnerId = (m.team1Id ?? m.team2Id)!;
+      m.status = "completed";
+      propagateToNext(m);
+      anyResolved = true;
     }
   }
 
