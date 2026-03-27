@@ -57,14 +57,9 @@ function MatchBox({
   const isCompleted = match.status === "completed";
   const isWinner = (id?: string | null) => !!match.winnerId && match.winnerId === id;
 
-  if (match.isBye) {
-    return (
-      <div className="select-none rounded-md border border-dashed border-border/50 bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
-        <span className="font-medium">{getDisplayName(team1, match.team1Id)}</span>
-        <span className="ml-1.5 text-[10px] opacity-60">BYE</span>
-      </div>
-    );
-  }
+  // Rule 1 & 4: BYE matches are never shown — the player already appears in
+  // the next round via winner propagation. Return null so the slot is empty.
+  if (match.isBye) return null;
 
   const isTbd = !match.team1Id && !match.team2Id;
   if (isTbd) {
@@ -171,7 +166,8 @@ function RoundColumn({
 
         return (
           <div key={i} className="absolute" style={{ top: cardTop, left: connectorSide === "right" ? 0 : STUB_W, width: COL_W }}>
-            {match ? (
+            {/* BYE slots are invisible — player already appears in next round */}
+            {match && !match.isBye ? (
               <MatchBox
                 match={match}
                 team1={getTeam(match.team1Id)}
@@ -182,11 +178,11 @@ function RoundColumn({
                     : undefined
                 }
               />
-            ) : (
+            ) : !match ? (
               <div className="rounded-lg border border-dashed border-border/20 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/30 text-center">
                 TBD
               </div>
-            )}
+            ) : null}
 
             {/* Tree connector lines */}
             {showConnector && (
@@ -494,18 +490,18 @@ function LegacyBracket({
                         <div className="absolute left-0 top-1/2 bg-border" style={{ width: 16, height: 1 }} />
                       )}
                       <div className="flex-1">
-                        {match ? (
+                        {match && !match.isBye ? (
                           <MatchBox
                             match={match}
                             team1={getTeam(match.team1Id)}
                             team2={getTeam(match.team2Id)}
                             onClick={onMatchClick && match.team1Id && match.team2Id ? () => onMatchClick(match.id) : undefined}
                           />
-                        ) : (
+                        ) : !match ? (
                           <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">
                             TBD
                           </div>
-                        )}
+                        ) : null}
                       </div>
                       {showConnector && (
                         <>
