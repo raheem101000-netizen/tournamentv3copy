@@ -354,6 +354,7 @@ function SingleEliminationBracket({
 
   return (
     <div className="w-full overflow-x-auto pb-6">
+      <div className="w-fit mx-auto">
       {/* Round name headers */}
       <div className="flex mb-1 min-w-max">
         {leftRounds.map((r) => (
@@ -408,6 +409,7 @@ function SingleEliminationBracket({
             onMatchClick={onMatchClick}
           />
         ))}
+      </div>
       </div>
     </div>
   );
