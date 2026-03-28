@@ -325,13 +325,19 @@ function SingleEliminationBracket({
     return distance < names.length ? names[distance] : `Round ${round}`;
   }
 
-  // Returns matches for a given side and round, sorted by matchIndex.
-  // Each visual column shows only its own stored side so connector lines
-  // accurately reflect the actual nextMatchId progression in the data.
-  function roundMatchesForSide(side: "LEFT" | "RIGHT", round: number): Match[] {
-    return matches
-      .filter((m) => m.side === side && m.round === round)
-      .sort((a, b) => (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0));
+  // Distribute all matches for a round evenly between visual left and right columns.
+  // LEFT stored matches come first (sorted by matchIndex), then RIGHT stored matches.
+  // Split: visual LEFT gets ceil(total/2), visual RIGHT gets floor(total/2).
+  // Maximum difference between sides is always 1.
+  function roundMatchesForVisual(side: "LEFT" | "RIGHT", round: number): Match[] {
+    const byIndex = (a: Match, b: Match) =>
+      (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0);
+    const all = [
+      ...matches.filter((m) => m.side === "LEFT"  && m.round === round).sort(byIndex),
+      ...matches.filter((m) => m.side === "RIGHT" && m.round === round).sort(byIndex),
+    ];
+    const leftCount = Math.ceil(all.length / 2);
+    return side === "LEFT" ? all.slice(0, leftCount) : all.slice(leftCount);
   }
 
   // 2-team bracket: just show the FINAL
@@ -381,7 +387,7 @@ function SingleEliminationBracket({
         {leftRounds.map((r) => (
           <RoundColumn
             key={`left-${r}`}
-            roundMatches={roundMatchesForSide("LEFT", r)}
+            roundMatches={roundMatchesForVisual("LEFT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="right"
@@ -403,7 +409,7 @@ function SingleEliminationBracket({
         {rightRoundsDisplay.map((r) => (
           <RoundColumn
             key={`right-${r}`}
-            roundMatches={roundMatchesForSide("RIGHT", r)}
+            roundMatches={roundMatchesForVisual("RIGHT", r)}
             r1MatchCount={r1LeftCount}
             round={r}
             connectorSide="left"
