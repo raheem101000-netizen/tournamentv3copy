@@ -2452,7 +2452,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Propagate winner to next round placeholder in single elimination
+      console.log("[DEBUG] match.tournamentId=", match.tournamentId);
       const winnerTournament = await storage.getTournament(match.tournamentId);
+      console.log("[DEBUG] tournament found=", !!winnerTournament, "format=", winnerTournament?.format);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
         console.log(`[CASCADE] calling advanceWinner for matchId=${match.id}`);
         try {
