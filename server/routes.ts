@@ -2381,25 +2381,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "completed",
         matchStatus: "RESOLVED",
       });
+      console.log("[DEBUG] step5 complete - match marked completed");
 
-      // Update winner stats
-      const winnerTeam = await storage.getTeam(winnerId);
-      if (winnerTeam) {
-        await storage.updateTeam(winnerId, {
-          wins: (winnerTeam.wins ?? 0) + 1,
-          points: (winnerTeam.points ?? 0) + 3,
-        });
-      }
-
-      // Record loss for loser
-      const loserId = validTeams.find((id) => id !== winnerId);
-      if (loserId) {
-        const loserTeam = await storage.getTeam(loserId);
-        if (loserTeam) {
-          await storage.updateTeam(loserId, {
-            losses: (loserTeam.losses ?? 0) + 1,
+      try {
+        // Update winner stats
+        const winnerTeam = await storage.getTeam(winnerId);
+        if (winnerTeam) {
+          await storage.updateTeam(winnerId, {
+            wins: (winnerTeam.wins ?? 0) + 1,
+            points: (winnerTeam.points ?? 0) + 3,
           });
         }
+
+        // Record loss for loser
+        const loserId = validTeams.find((id) => id !== winnerId);
+        if (loserId) {
+          const loserTeam = await storage.getTeam(loserId);
+          if (loserTeam) {
+            await storage.updateTeam(loserId, {
+              losses: (loserTeam.losses ?? 0) + 1,
+            });
+          }
+        }
+        console.log("[DEBUG] steps 6-7 complete");
+      } catch (err) {
+        console.log("[DEBUG] steps 6-7 FAILED:", err);
       }
 
       // Propagate winner to next round in single elimination
