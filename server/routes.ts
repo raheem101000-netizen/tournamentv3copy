@@ -2234,9 +2234,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         break;
       }
 
-      // Exactly one player — slot is one-sided, advance them automatically
+      // One slot filled — check if another match will deliver an opponent to this slot
+      const allTournamentMatches = await storage.getMatchesByTournament(match.tournamentId);
+      const opponentComing = allTournamentMatches.some(
+        (m: any) => m.nextMatchId === updated.id && m.status !== "completed"
+      );
+      if (opponentComing) {
+        console.log("[CASCADE] BREAK — opponent is coming to matchId=%s from another pending match, player waits", updated.id);
+        break;
+      }
+
+      // No opponent will ever arrive — cascade the player forward
       const nextWinnerId = (updated.team1Id ?? updated.team2Id)!;
-      console.log("[CASCADE] One-sided slot — marking as BYE and continuing cascade. nextWinnerId=%s", nextWinnerId);
+      console.log("[CASCADE] No opponent coming — marking matchId=%s as BYE and cascading. nextWinnerId=%s", updated.id, nextWinnerId);
       await storage.updateMatch(updated.id, {
         isBye: 1,
         winnerId: nextWinnerId,
