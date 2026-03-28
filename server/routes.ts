@@ -2022,57 +2022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const tournament = await storage.getTournament(match.tournamentId);
 
         if (tournament && tournament.format === "single_elimination" && req.body.winnerId) {
-          if (match.nextMatchId) {
-            // New bracket: direct link via nextMatchId
-            const nextMatch = await storage.getMatch(match.nextMatchId);
-            const isFinalSlot = nextMatch?.side === "FINAL";
-            const isFirstSlot = isFinalSlot ? match.side === "LEFT" : (match.matchIndex ?? 0) % 2 === 0;
-            await storage.updateMatch(match.nextMatchId, {
-              [isFirstSlot ? "team1Id" : "team2Id"]: req.body.winnerId,
-            });
-
-            // Auto-create match chat thread when both players in the next slot are now confirmed.
-            const updatedNext = await storage.getMatch(match.nextMatchId);
-            if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
-              await createMatchThreadsForAllMembers(
-                updatedNext.id,
-                updatedNext.team1Id,
-                updatedNext.team2Id,
-                updatedNext.roundName ?? undefined
-              );
-            }
-          } else {
-            // Legacy fallback: position-based lookup
-            const allMatches = await storage.getMatchesByTournament(tournament.id);
-            const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
-              ? match.matchPosition
-              : (() => {
-                  const cr = allMatches.filter((m) => m.round === match.round);
-                  return cr.findIndex((m) => m.id === match.id);
-                })();
-            if (matchPos !== -1) {
-              const nextRoundPosition = Math.floor(matchPos / 2);
-              const isFirstSlot = matchPos % 2 === 0;
-              const nextRoundMatches = allMatches.filter((m) => m.round === match.round + 1);
-              const nextMatch = nextRoundMatches.find((m) => m.matchPosition === nextRoundPosition) ?? nextRoundMatches[nextRoundPosition];
-              if (nextMatch) {
-                await storage.updateMatch(nextMatch.id, {
-                  [isFirstSlot ? "team1Id" : "team2Id"]: req.body.winnerId,
-                });
-
-                // Auto-create chat thread once both players are in the next slot.
-                const updatedNext = await storage.getMatch(nextMatch.id);
-                if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
-                  await createMatchThreadsForAllMembers(
-                    updatedNext.id,
-                    updatedNext.team1Id,
-                    updatedNext.team2Id,
-                    updatedNext.roundName ?? undefined
-                  );
-                }
-              }
-            }
-          }
+          await progressWinner(match.id, req.body.winnerId, tournament.id);
         }
 
         if (tournament && tournament.format === "swiss") {
