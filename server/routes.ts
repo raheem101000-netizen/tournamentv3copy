@@ -2221,10 +2221,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Step 5: place winner into the chosen slot
       await storage.updateMatch(nextMatch.id, { [slot]: currentWinner });
+      console.log(`[CASCADE] placed winnerId=${currentWinner} into slot=${slot} of nextMatchId=${nextMatch.id}`);
 
       // Step 6: re-fetch to see current state after write
       const updated = await storage.getMatch(nextMatch.id);
       if (!updated) return;
+      console.log(`[CASCADE] after write: team1Id=${updated.team1Id} team2Id=${updated.team2Id} status=${updated.status}`);
 
       // Step 7: both slots filled → create thread and stop
       if (updated.team1Id && updated.team2Id) {
@@ -2451,6 +2453,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Propagate winner to next round placeholder in single elimination
       const winnerTournament = await storage.getTournament(match.tournamentId);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
+        console.log(`[CASCADE] calling advanceWinner for matchId=${match.id}`);
         await advanceWinner(match, winnerId, winnerTournament.id);
 
         // Final match has no nextMatchId — mark tournament complete
@@ -2458,6 +2461,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateTournament(match.tournamentId, { status: "completed" });
           log('INFO', 'Tournament completed', { tournamentId: match.tournamentId });
         }
+      } else {
+        console.log(`[CASCADE] SKIPPED - reason: ${!winnerTournament ? 'tournament not found' : `format=${winnerTournament.format}`}`);
       }
 
       log('INFO', 'Match completed', { matchId: req.params.matchId, winnerId });
