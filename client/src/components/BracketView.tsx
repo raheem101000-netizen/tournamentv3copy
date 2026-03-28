@@ -332,9 +332,11 @@ function SingleEliminationBracket({
   function roundMatchesForVisual(side: "LEFT" | "RIGHT", round: number): Match[] {
     const byIndex = (a: Match, b: Match) =>
       (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0);
+    // Exclude phantom null-null slots — only count matches that have at least one team
+    const hasTeam = (m: Match) => !!(m.team1Id || m.team2Id);
     const all = [
-      ...matches.filter((m) => m.side === "LEFT"  && m.round === round).sort(byIndex),
-      ...matches.filter((m) => m.side === "RIGHT" && m.round === round).sort(byIndex),
+      ...matches.filter((m) => m.side === "LEFT"  && m.round === round && hasTeam(m)).sort(byIndex),
+      ...matches.filter((m) => m.side === "RIGHT" && m.round === round && hasTeam(m)).sort(byIndex),
     ];
     const leftCount = Math.ceil(all.length / 2);
     return side === "LEFT" ? all.slice(0, leftCount) : all.slice(leftCount);
