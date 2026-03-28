@@ -2193,6 +2193,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
+    console.log("[PROGRESS] START matchId=", matchId, "winnerId=", winnerId, "tournamentId=", tournamentId);
     console.log(`[PROGRESS] called matchId=${matchId} winnerId=${winnerId}`);
 
     // STEP 1: Get the match that was just won
