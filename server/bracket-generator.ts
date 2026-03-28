@@ -111,7 +111,6 @@ export function generateSingleEliminationBracket(
       if (r === 1) {
         team1 = teams[i * 2] ?? null;
         team2 = teams[i * 2 + 1] ?? null;
-        if (team1 === null && team2 === null) continue; // Bug 3: skip phantom empty slot
       }
 
       let nextMatchId: string | null;
@@ -134,11 +133,8 @@ export function generateSingleEliminationBracket(
       let team2: Team | null = null;
 
       if (r === 1) {
-        const idx1 = halfSize + i * 2;
-        const idx2 = halfSize + i * 2 + 1;
-        team1 = idx1 < n ? (teams[idx1] ?? null) : null; // Bug 1: explicit bounds — no overlap with LEFT
-        team2 = idx2 < n ? (teams[idx2] ?? null) : null;
-        if (team1 === null && team2 === null) continue;  // Bug 3: skip phantom empty slot
+        team1 = teams[halfSize + i * 2] ?? null;
+        team2 = teams[halfSize + i * 2 + 1] ?? null;
       }
 
       let nextMatchId: string | null;
@@ -177,40 +173,22 @@ export function generateSingleEliminationBracket(
     matchType: "auto" as const,
   });
 
-  // ── Propagate byes into next rounds (cascading) ───────────────────────────
+  // ── Propagate byes into next rounds ──────────────────────────────────────
+  // For any R1 bye winner, fill the appropriate slot in the next match.
   const matchById = new Map(result.map((m) => [m.id, m]));
-
-  function propagateToNext(m: BracketMatch): void {
-    if (!m.winnerId || !m.nextMatchId) return;
-    const next = matchById.get(m.nextMatchId);
-    if (!next) return;
-    const isFinalSlot = next.side === "FINAL";
-    const isFirstSlot = isFinalSlot ? m.side === "LEFT" : m.matchIndex % 2 === 0;
-    if (isFirstSlot) {
-      next.team1Id = m.winnerId;
-    } else {
-      next.team2Id = m.winnerId;
-    }
-  }
-
-  // First pass: propagate all existing BYE winners one level
   for (const m of result) {
-    if (m.isBye && m.winnerId) propagateToNext(m);
-  }
-
-  // Cascade: any match now with exactly one team is itself a BYE — resolve and continue
-  let anyResolved = true;
-  while (anyResolved) {
-    anyResolved = false;
-    for (const m of result) {
-      if (m.winnerId) continue;
-      const hasExactlyOneTeam = (!!m.team1Id) !== (!!m.team2Id);
-      if (!hasExactlyOneTeam) continue;
-      m.isBye = 1;
-      m.winnerId = (m.team1Id ?? m.team2Id)!;
-      m.status = "completed";
-      propagateToNext(m);
-      anyResolved = true;
+    if (m.isBye && m.winnerId && m.nextMatchId) {
+      const next = matchById.get(m.nextMatchId);
+      if (next) {
+        // When feeding into the FINAL, LEFT→team1 and RIGHT→team2
+        const isFinalSlot = next.side === "FINAL";
+        const isFirstSlot = isFinalSlot ? m.side === "LEFT" : m.matchIndex % 2 === 0;
+        if (isFirstSlot) {
+          next.team1Id = m.winnerId;
+        } else {
+          next.team2Id = m.winnerId;
+        }
+      }
     }
   }
 
