@@ -2192,6 +2192,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: place a winner into the next bracket slot and cascade through any
+  // one-sided slots until a real opponent arrives or the Grand Final is reached.
+  async function cascadeWinner(fromMatch: any, currentWinnerId: string): Promise<void> {
+    let cur = fromMatch;
+
+    while (cur.nextMatchId) {
+      const next = await storage.getMatch(cur.nextMatchId);
+      if (!next) break;
+
+      // Determine which slot in the next match this match feeds into
+      const isFinalSlot = next.side === "FINAL";
+      const isFirstSlot = isFinalSlot
+        ? cur.side === "LEFT"
+        : (cur.matchIndex ?? 0) % 2 === 0;
+
+      await storage.updateMatch(next.id, {
+        [isFirstSlot ? "team1Id" : "team2Id"]: currentWinnerId,
+      });
+
+      const updated = await storage.getMatch(next.id);
+      if (!updated) break;
+
+      if (updated.team1Id && updated.team2Id) {
+        // Both players present — real match ready
+        if (!updated.isBye) {
+          await createMatchThreadsForAllMembers(
+            updated.id, updated.team1Id, updated.team2Id, updated.roundName ?? undefined
+          );
+        }
+        break;
+      }
+
+      // One player in slot — check if an opponent will arrive from another pending match
+      const allMatches = await storage.getMatchesByTournament(cur.tournamentId);
+      const opponentComing = allMatches.some(
+        (m: any) => m.nextMatchId === updated.id && m.status !== "completed"
+      );
+      if (opponentComing) break; // Opponent on the way — player waits here
+
+      // No opponent will ever arrive — auto-advance this player as a BYE
+      const nextWinnerId = (updated.team1Id ?? updated.team2Id)!;
+      await storage.updateMatch(updated.id, {
+        isBye: 1,
+        winnerId: nextWinnerId,
+        status: "completed",
+      });
+      cur = updated;
+      currentWinnerId = nextWinnerId;
+    }
+  }
+
   // Helper: set winner and propagate bracket (reused by organizer endpoint and auto-resolve)
   async function resolveMatchWinner(matchId: string, winnerId: string): Promise<void> {
     const match = await storage.getMatch(matchId);
@@ -2215,13 +2266,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const tournament = await storage.getTournament(match.tournamentId);
     if (tournament && tournament.format === "single_elimination") {
       if (match.nextMatchId) {
-        const nextMatch = await storage.getMatch(match.nextMatchId);
-        const isFinalSlot = nextMatch?.side === "FINAL";
-        const isFirstSlot = isFinalSlot ? match.side === "LEFT" : (match.matchIndex ?? 0) % 2 === 0;
-        await storage.updateMatch(match.nextMatchId, {
-          [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
-        });
+        await cascadeWinner(match, winnerId);
       } else {
+        // Legacy bracket (no nextMatchId): single position-based step only
         const allMatches = await storage.getMatchesByTournament(tournament.id);
         const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
           ? match.matchPosition
@@ -2408,26 +2455,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const winnerTournament = await storage.getTournament(match.tournamentId);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
         if (match.nextMatchId) {
-          // New bracket: direct link via nextMatchId
-          const nextMatch = await storage.getMatch(match.nextMatchId);
-          const isFinalSlot = nextMatch?.side === "FINAL";
-          const isFirstSlot = isFinalSlot ? match.side === "LEFT" : (match.matchIndex ?? 0) % 2 === 0;
-          await storage.updateMatch(match.nextMatchId, {
-            [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
-          });
-
-          // Auto-create match chat thread when both players in the next slot are now confirmed.
-          const updatedNext = await storage.getMatch(match.nextMatchId);
-          if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
-            await createMatchThreadsForAllMembers(
-              updatedNext.id,
-              updatedNext.team1Id,
-              updatedNext.team2Id,
-              updatedNext.roundName ?? undefined
-            );
-          }
+          await cascadeWinner(match, winnerId);
         } else {
-          // Legacy fallback: position-based lookup
+          // Legacy fallback: position-based single step
           const allMatches = await storage.getMatchesByTournament(winnerTournament.id);
           const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
             ? match.matchPosition
@@ -2444,23 +2474,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               await storage.updateMatch(nextMatch.id, {
                 [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
               });
-
-              // Auto-create chat thread once both players are in the next slot.
               const updatedNext = await storage.getMatch(nextMatch.id);
               if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
                 await createMatchThreadsForAllMembers(
-                  updatedNext.id,
-                  updatedNext.team1Id,
-                  updatedNext.team2Id,
-                  updatedNext.roundName ?? undefined
+                  updatedNext.id, updatedNext.team1Id, updatedNext.team2Id, updatedNext.roundName ?? undefined
                 );
               }
             }
           }
         }
 
-        // Once the Final is resolved, mark the tournament complete.
-        // The Final is the only bracket match with no nextMatchId.
+        // Final match has no nextMatchId — mark tournament complete
         if (!match.nextMatchId && (match as any).matchType !== 'manual') {
           await storage.updateTournament(match.tournamentId, { status: "completed" });
           log('INFO', 'Tournament completed', { tournamentId: match.tournamentId });
