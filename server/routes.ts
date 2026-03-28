@@ -2193,6 +2193,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function advanceWinner(fromMatch: any, winnerId: string, tournamentId: string): Promise<void> {
+    console.log("[CASCADE] START");
     let currentMatch = fromMatch;
     let currentWinner = winnerId;
 
@@ -2454,7 +2455,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const winnerTournament = await storage.getTournament(match.tournamentId);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
         console.log(`[CASCADE] calling advanceWinner for matchId=${match.id}`);
-        await advanceWinner(match, winnerId, winnerTournament.id);
+        try {
+          await advanceWinner(match, winnerId, winnerTournament.id);
+          console.log("[CASCADE] advanceWinner completed successfully");
+        } catch (err) {
+          console.log("[CASCADE] ERROR:", err);
+        }
 
         // Final match has no nextMatchId — mark tournament complete
         if (!match.nextMatchId && (match as any).matchType !== 'manual') {
