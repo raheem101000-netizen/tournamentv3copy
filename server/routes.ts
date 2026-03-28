@@ -2022,57 +2022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const tournament = await storage.getTournament(match.tournamentId);
 
         if (tournament && tournament.format === "single_elimination" && req.body.winnerId) {
-          if (match.nextMatchId) {
-            // New bracket: direct link via nextMatchId
-            const nextMatch = await storage.getMatch(match.nextMatchId);
-            const isFinalSlot = nextMatch?.side === "FINAL";
-            const isFirstSlot = isFinalSlot ? match.side === "LEFT" : (match.matchIndex ?? 0) % 2 === 0;
-            await storage.updateMatch(match.nextMatchId, {
-              [isFirstSlot ? "team1Id" : "team2Id"]: req.body.winnerId,
-            });
-
-            // Auto-create match chat thread when both players in the next slot are now confirmed.
-            const updatedNext = await storage.getMatch(match.nextMatchId);
-            if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
-              await createMatchThreadsForAllMembers(
-                updatedNext.id,
-                updatedNext.team1Id,
-                updatedNext.team2Id,
-                updatedNext.roundName ?? undefined
-              );
-            }
-          } else {
-            // Legacy fallback: position-based lookup
-            const allMatches = await storage.getMatchesByTournament(tournament.id);
-            const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
-              ? match.matchPosition
-              : (() => {
-                  const cr = allMatches.filter((m) => m.round === match.round);
-                  return cr.findIndex((m) => m.id === match.id);
-                })();
-            if (matchPos !== -1) {
-              const nextRoundPosition = Math.floor(matchPos / 2);
-              const isFirstSlot = matchPos % 2 === 0;
-              const nextRoundMatches = allMatches.filter((m) => m.round === match.round + 1);
-              const nextMatch = nextRoundMatches.find((m) => m.matchPosition === nextRoundPosition) ?? nextRoundMatches[nextRoundPosition];
-              if (nextMatch) {
-                await storage.updateMatch(nextMatch.id, {
-                  [isFirstSlot ? "team1Id" : "team2Id"]: req.body.winnerId,
-                });
-
-                // Auto-create chat thread once both players are in the next slot.
-                const updatedNext = await storage.getMatch(nextMatch.id);
-                if (updatedNext && updatedNext.team1Id && updatedNext.team2Id && !updatedNext.isBye) {
-                  await createMatchThreadsForAllMembers(
-                    updatedNext.id,
-                    updatedNext.team1Id,
-                    updatedNext.team2Id,
-                    updatedNext.roundName ?? undefined
-                  );
-                }
-              }
-            }
-          }
+          await cascadeSingleElimWinner(match, req.body.winnerId);
         }
 
         if (tournament && tournament.format === "swiss") {
@@ -2192,6 +2142,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: place a winner into the next bracket slot and cascade through any
+  // one-sided slots until a real opponent is found or the Grand Final is reached.
+  // Works for both the new (nextMatchId) bracket and the legacy (position-based) bracket.
+  async function cascadeSingleElimWinner(match: any, winnerId: string): Promise<void> {
+    if (!match.nextMatchId) {
+      // Legacy bracket: position-based lookup — cascade not supported, single step only
+      const allMatches = await storage.getMatchesByTournament(match.tournamentId);
+      const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
+        ? match.matchPosition
+        : (() => {
+            const cr = allMatches.filter((m: any) => m.round === match.round);
+            return cr.findIndex((m: any) => m.id === match.id);
+          })();
+      if (matchPos !== -1) {
+        const nextRoundPosition = Math.floor(matchPos / 2);
+        const isFirstSlot = matchPos % 2 === 0;
+        const nextRoundMatches = allMatches.filter((m: any) => m.round === match.round + 1);
+        const nextMatch = nextRoundMatches.find((m: any) => m.matchPosition === nextRoundPosition) ?? nextRoundMatches[nextRoundPosition];
+        if (nextMatch) {
+          await storage.updateMatch(nextMatch.id, {
+            [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
+          });
+        }
+      }
+      return;
+    }
+
+    let fromMatch = match;
+    let currentWinnerId = winnerId;
+
+    while (fromMatch.nextMatchId) {
+      const nextMatch = await storage.getMatch(fromMatch.nextMatchId);
+      if (!nextMatch) break;
+
+      // Place winner into the correct slot of the next match
+      const isFinalSlot = nextMatch.side === "FINAL";
+      const isFirstSlot = isFinalSlot
+        ? fromMatch.side === "LEFT"
+        : (fromMatch.matchIndex ?? 0) % 2 === 0;
+      await storage.updateMatch(nextMatch.id, {
+        [isFirstSlot ? "team1Id" : "team2Id"]: currentWinnerId,
+      });
+
+      // Re-fetch to see the slot state after our write
+      const updated = await storage.getMatch(nextMatch.id);
+      if (!updated) break;
+
+      if (updated.team1Id && updated.team2Id) {
+        // Both players present — real match, open thread and stop cascading
+        if (!updated.isBye) {
+          await createMatchThreadsForAllMembers(
+            updated.id,
+            updated.team1Id,
+            updated.team2Id,
+            updated.roundName ?? undefined
+          );
+        }
+        break;
+      }
+
+      if (!updated.team1Id && !updated.team2Id) break; // Empty slot — nothing to do
+
+      // Exactly one player — slot is one-sided, advance them automatically
+      const nextWinnerId = (updated.team1Id ?? updated.team2Id)!;
+      await storage.updateMatch(updated.id, {
+        isBye: 1,
+        winnerId: nextWinnerId,
+        status: "completed",
+      });
+
+      fromMatch = updated;
+      currentWinnerId = nextWinnerId;
+    }
+  }
+
   // Helper: set winner and propagate bracket (reused by organizer endpoint and auto-resolve)
   async function resolveMatchWinner(matchId: string, winnerId: string): Promise<void> {
     const match = await storage.getMatch(matchId);
@@ -2214,33 +2239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const tournament = await storage.getTournament(match.tournamentId);
     if (tournament && tournament.format === "single_elimination") {
-      if (match.nextMatchId) {
-        const nextMatch = await storage.getMatch(match.nextMatchId);
-        const isFinalSlot = nextMatch?.side === "FINAL";
-        const isFirstSlot = isFinalSlot ? match.side === "LEFT" : (match.matchIndex ?? 0) % 2 === 0;
-        await storage.updateMatch(match.nextMatchId, {
-          [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
-        });
-      } else {
-        const allMatches = await storage.getMatchesByTournament(tournament.id);
-        const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
-          ? match.matchPosition
-          : (() => {
-              const cr = allMatches.filter((m) => m.round === match.round);
-              return cr.findIndex((m) => m.id === match.id);
-            })();
-        if (matchPos !== -1) {
-          const nextRoundPosition = Math.floor(matchPos / 2);
-          const isFirstSlot = matchPos % 2 === 0;
-          const nextRoundMatches = allMatches.filter((m) => m.round === match.round + 1);
-          const nextMatch = nextRoundMatches.find((m) => m.matchPosition === nextRoundPosition) ?? nextRoundMatches[nextRoundPosition];
-          if (nextMatch) {
-            await storage.updateMatch(nextMatch.id, {
-              [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
-            });
-          }
-        }
-      }
+      await cascadeSingleElimWinner(match, winnerId);
     }
   }
 
