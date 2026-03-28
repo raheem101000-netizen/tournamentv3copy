@@ -2193,7 +2193,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function advanceWinner(fromMatch: any, winnerId: string, tournamentId: string): Promise<void> {
-    // Step 1: get nextMatchId
     let currentMatch = fromMatch;
     let currentWinner = winnerId;
 
@@ -2205,15 +2204,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const nextMatch = await storage.getMatch(currentMatch.nextMatchId);
       if (!nextMatch) return;
 
-      // Step 4: determine slot
-      const slot = nextMatch.side === "FINAL"
+      // Step 4: determine preferred slot based on matchIndex / side
+      const preferredSlot: "team1Id" | "team2Id" = nextMatch.side === "FINAL"
         ? (currentMatch.side === "LEFT" ? "team1Id" : "team2Id")
         : ((currentMatch.matchIndex ?? 0) % 2 === 0 ? "team1Id" : "team2Id");
+      const alternateSlot: "team1Id" | "team2Id" = preferredSlot === "team1Id" ? "team2Id" : "team1Id";
 
-      // Step 5: place winner into that slot
+      // Bug 1 fix: re-fetch nextMatch from DB to see its live state before writing.
+      // If the preferred slot is already occupied by someone else, use the alternate slot
+      // to avoid overwriting (handles null matchIndex causing both matches to pick team1Id).
+      const liveNext = await storage.getMatch(nextMatch.id);
+      const slot: "team1Id" | "team2Id" =
+        liveNext?.[preferredSlot] && liveNext[preferredSlot] !== currentWinner
+          ? alternateSlot
+          : preferredSlot;
+
+      // Step 5: place winner into the chosen slot
       await storage.updateMatch(nextMatch.id, { [slot]: currentWinner });
 
-      // Step 6: re-fetch to see current state
+      // Step 6: re-fetch to see current state after write
       const updated = await storage.getMatch(nextMatch.id);
       if (!updated) return;
 
@@ -2230,14 +2239,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 9: both slots empty → stop
       if (!updated.team1Id && !updated.team2Id) return;
 
-      // Step 8: one slot filled — check if any other incomplete match feeds into this one
+      // Step 8: one slot filled — check if any OTHER incomplete match feeds into this slot.
+      // Bug 2 fix: exclude fromMatch.id (the original completed match) not currentMatch.id
+      // which drifts as we cascade, and could exclude real pending feeders.
       const allMatches = await storage.getMatchesByTournament(tournamentId);
       const opponentComing = allMatches.some(
-        (m: any) => m.nextMatchId === updated.id && m.status !== "completed" && m.id !== currentMatch.id
+        (m: any) => m.nextMatchId === updated.id && m.status !== "completed" && m.id !== fromMatch.id
       );
-      if (opponentComing) return; // opponent is coming, stop
+      if (opponentComing) return; // opponent is coming — stop
 
-      // No opponent coming — treat current player as winner of this match and continue
+      // No opponent coming — auto-advance this player as the sole winner
       const soloWinner = (updated.team1Id ?? updated.team2Id)!;
       await storage.updateMatch(updated.id, {
         isBye: 1,
