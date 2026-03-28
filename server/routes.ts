@@ -1946,6 +1946,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/matches/:id", async (req, res) => {
     try {
+      console.log("[PATCH] hit matchId=", req.params.id);
       log('INFO', 'Match update attempt', { matchId: req.params.id });
       if (!req.session.userId) {
         return res.status(401).json({ error: "Unauthorized" });
