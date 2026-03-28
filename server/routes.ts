@@ -2194,7 +2194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Helper: place a winner into the next bracket slot and cascade through any
   // one-sided slots until a real opponent arrives or the Grand Final is reached.
-  async function cascadeWinner(fromMatch: any, currentWinnerId: string): Promise<void> {
+  async function cascadeWinner(fromMatch: any, currentWinnerId: string, tournamentId: string): Promise<void> {
     let cur = fromMatch;
 
     while (cur.nextMatchId) {
@@ -2225,7 +2225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // One player in slot — check if an opponent will arrive from another pending match
-      const allMatches = await storage.getMatchesByTournament(cur.tournamentId);
+      const allMatches = await storage.getMatchesByTournament(tournamentId);
       const opponentComing = allMatches.some(
         (m: any) => m.nextMatchId === updated.id && m.status !== "completed"
       );
@@ -2266,7 +2266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const tournament = await storage.getTournament(match.tournamentId);
     if (tournament && tournament.format === "single_elimination") {
       if (match.nextMatchId) {
-        await cascadeWinner(match, winnerId);
+        await cascadeWinner(match, winnerId, tournament.id);
       } else {
         // Legacy bracket (no nextMatchId): single position-based step only
         const allMatches = await storage.getMatchesByTournament(tournament.id);
@@ -2455,7 +2455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const winnerTournament = await storage.getTournament(match.tournamentId);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
         if (match.nextMatchId) {
-          await cascadeWinner(match, winnerId);
+          await cascadeWinner(match, winnerId, winnerTournament.id);
         } else {
           // Legacy fallback: position-based single step
           const allMatches = await storage.getMatchesByTournament(winnerTournament.id);
