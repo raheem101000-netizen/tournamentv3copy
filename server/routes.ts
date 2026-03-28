@@ -2385,6 +2385,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Match not found" });
       }
 
+      console.log(`[WINNER] matchId=${match.id} side=${match.side} matchIndex=${match.matchIndex} nextMatchId=${match.nextMatchId} winnerId=${winnerId}`);
+
       // Permission check: organizer, server owner, or Tournament Manager
       if (match.tournamentId) {
         const tournament = await storage.getTournament(match.tournamentId);
