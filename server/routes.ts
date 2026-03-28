@@ -2146,7 +2146,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // one-sided slots until a real opponent is found or the Grand Final is reached.
   // Works for both the new (nextMatchId) bracket and the legacy (position-based) bracket.
   async function cascadeSingleElimWinner(match: any, winnerId: string): Promise<void> {
+    console.log("[CASCADE] START matchId=%s side=%s round=%s nextMatchId=%s winnerId=%s",
+      match.id, match.side, match.round, match.nextMatchId, winnerId);
+
     if (!match.nextMatchId) {
+      console.log("[CASCADE] No nextMatchId — using legacy position-based lookup (no cascade)");
       // Legacy bracket: position-based lookup — cascade not supported, single step only
       const allMatches = await storage.getMatchesByTournament(match.tournamentId);
       const matchPos = (match.matchPosition !== null && match.matchPosition !== undefined)
@@ -2161,9 +2165,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const nextRoundMatches = allMatches.filter((m: any) => m.round === match.round + 1);
         const nextMatch = nextRoundMatches.find((m: any) => m.matchPosition === nextRoundPosition) ?? nextRoundMatches[nextRoundPosition];
         if (nextMatch) {
+          console.log("[CASCADE] Legacy: placing winnerId=%s into %s of matchId=%s",
+            winnerId, isFirstSlot ? "team1Id" : "team2Id", nextMatch.id);
           await storage.updateMatch(nextMatch.id, {
             [isFirstSlot ? "team1Id" : "team2Id"]: winnerId,
           });
+        } else {
+          console.log("[CASCADE] Legacy: no next match found for round=%s pos=%s", match.round + 1, nextRoundPosition);
         }
       }
       return;
@@ -2173,23 +2181,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let currentWinnerId = winnerId;
 
     while (fromMatch.nextMatchId) {
+      console.log("[CASCADE] LOOP fromMatchId=%s side=%s matchIndex=%s nextMatchId=%s currentWinnerId=%s",
+        fromMatch.id, fromMatch.side, fromMatch.matchIndex, fromMatch.nextMatchId, currentWinnerId);
+
       const nextMatch = await storage.getMatch(fromMatch.nextMatchId);
-      if (!nextMatch) break;
+      if (!nextMatch) {
+        console.log("[CASCADE] BREAK — getMatch(%s) returned null/undefined", fromMatch.nextMatchId);
+        break;
+      }
+
+      console.log("[CASCADE] Found nextMatch id=%s side=%s round=%s team1Id=%s team2Id=%s winnerId=%s status=%s",
+        nextMatch.id, nextMatch.side, nextMatch.round, nextMatch.team1Id, nextMatch.team2Id, nextMatch.winnerId, nextMatch.status);
 
       // Place winner into the correct slot of the next match
       const isFinalSlot = nextMatch.side === "FINAL";
       const isFirstSlot = isFinalSlot
         ? fromMatch.side === "LEFT"
         : (fromMatch.matchIndex ?? 0) % 2 === 0;
+      const slotKey = isFirstSlot ? "team1Id" : "team2Id";
+      console.log("[CASCADE] Placing currentWinnerId=%s into slot=%s of matchId=%s (isFinalSlot=%s)",
+        currentWinnerId, slotKey, nextMatch.id, isFinalSlot);
       await storage.updateMatch(nextMatch.id, {
-        [isFirstSlot ? "team1Id" : "team2Id"]: currentWinnerId,
+        [slotKey]: currentWinnerId,
       });
 
       // Re-fetch to see the slot state after our write
       const updated = await storage.getMatch(nextMatch.id);
-      if (!updated) break;
+      if (!updated) {
+        console.log("[CASCADE] BREAK — re-fetch of matchId=%s returned null/undefined", nextMatch.id);
+        break;
+      }
+
+      console.log("[CASCADE] After write — matchId=%s team1Id=%s team2Id=%s winnerId=%s status=%s isBye=%s",
+        updated.id, updated.team1Id, updated.team2Id, updated.winnerId, updated.status, updated.isBye);
 
       if (updated.team1Id && updated.team2Id) {
+        console.log("[CASCADE] BREAK — both slots filled, real match ready (isBye=%s)", updated.isBye);
         // Both players present — real match, open thread and stop cascading
         if (!updated.isBye) {
           await createMatchThreadsForAllMembers(
@@ -2202,10 +2229,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         break;
       }
 
-      if (!updated.team1Id && !updated.team2Id) break; // Empty slot — nothing to do
+      if (!updated.team1Id && !updated.team2Id) {
+        console.log("[CASCADE] BREAK — both slots empty after write, nothing to do");
+        break;
+      }
 
       // Exactly one player — slot is one-sided, advance them automatically
       const nextWinnerId = (updated.team1Id ?? updated.team2Id)!;
+      console.log("[CASCADE] One-sided slot — marking as BYE and continuing cascade. nextWinnerId=%s", nextWinnerId);
       await storage.updateMatch(updated.id, {
         isBye: 1,
         winnerId: nextWinnerId,
@@ -2215,6 +2246,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       fromMatch = updated;
       currentWinnerId = nextWinnerId;
     }
+
+    console.log("[CASCADE] DONE for original matchId=%s", match.id);
   }
 
   // Helper: set winner and propagate bracket (reused by organizer endpoint and auto-resolve)
