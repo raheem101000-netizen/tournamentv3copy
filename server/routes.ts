@@ -2192,75 +2192,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  async function advanceWinner(fromMatch: any, winnerId: string, tournamentId: string): Promise<void> {
-    console.log("[CASCADE] START");
-    let currentMatch = fromMatch;
-    let currentWinner = winnerId;
+  async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
+    console.log(`[PROGRESS] called matchId=${matchId} winnerId=${winnerId}`);
 
-    while (true) {
-      // Step 1-2: no nextMatchId → stop
-      if (!currentMatch.nextMatchId) return;
-
-      // Step 3: fetch the next match
-      const nextMatch = await storage.getMatch(currentMatch.nextMatchId);
-      if (!nextMatch) return;
-
-      // Step 4: determine preferred slot based on matchIndex / side
-      const preferredSlot: "team1Id" | "team2Id" = nextMatch.side === "FINAL"
-        ? (currentMatch.side === "LEFT" ? "team1Id" : "team2Id")
-        : ((currentMatch.matchIndex ?? 0) % 2 === 0 ? "team1Id" : "team2Id");
-      const alternateSlot: "team1Id" | "team2Id" = preferredSlot === "team1Id" ? "team2Id" : "team1Id";
-
-      // Bug 1 fix: re-fetch nextMatch from DB to see its live state before writing.
-      // If the preferred slot is already occupied by someone else, use the alternate slot
-      // to avoid overwriting (handles null matchIndex causing both matches to pick team1Id).
-      const liveNext = await storage.getMatch(nextMatch.id);
-      const slot: "team1Id" | "team2Id" =
-        liveNext?.[preferredSlot] && liveNext[preferredSlot] !== currentWinner
-          ? alternateSlot
-          : preferredSlot;
-
-      // Step 5: place winner into the chosen slot
-      await storage.updateMatch(nextMatch.id, { [slot]: currentWinner });
-      console.log(`[CASCADE] placed winnerId=${currentWinner} into slot=${slot} of nextMatchId=${nextMatch.id}`);
-
-      // Step 6: re-fetch to see current state after write
-      const updated = await storage.getMatch(nextMatch.id);
-      if (!updated) return;
-      console.log(`[CASCADE] after write: team1Id=${updated.team1Id} team2Id=${updated.team2Id} status=${updated.status}`);
-
-      // Step 7: both slots filled → create thread and stop
-      if (updated.team1Id && updated.team2Id) {
-        if (!updated.isBye) {
-          await createMatchThreadsForAllMembers(
-            updated.id, updated.team1Id, updated.team2Id, updated.roundName ?? undefined
-          );
-        }
-        return;
-      }
-
-      // Step 9: both slots empty → stop
-      if (!updated.team1Id && !updated.team2Id) return;
-
-      // Step 8: one slot filled — check if any OTHER incomplete match feeds into this slot.
-      // Bug 2 fix: exclude fromMatch.id (the original completed match) not currentMatch.id
-      // which drifts as we cascade, and could exclude real pending feeders.
-      const allMatches = await storage.getMatchesByTournament(tournamentId);
-      const opponentComing = allMatches.some(
-        (m: any) => m.nextMatchId === updated.id && m.status !== "completed" && m.id !== fromMatch.id
-      );
-      if (opponentComing) return; // opponent is coming — stop
-
-      // No opponent coming — auto-advance this player as the sole winner
-      const soloWinner = (updated.team1Id ?? updated.team2Id)!;
-      await storage.updateMatch(updated.id, {
-        isBye: 1,
-        winnerId: soloWinner,
-        status: "completed",
-      });
-      currentMatch = updated;
-      currentWinner = soloWinner;
+    // STEP 1: Get the match that was just won
+    const match = await storage.getMatch(matchId);
+    if (!match || !match.nextMatchId) {
+      console.log(`[PROGRESS] stopping - no nextMatchId`);
+      return;
     }
+
+    // STEP 2: Get the next bracket slot this winner feeds into
+    const nextMatch = await storage.getMatch(match.nextMatchId);
+    if (!nextMatch) {
+      console.log(`[PROGRESS] stopping - nextMatch not found`);
+      return;
+    }
+
+    // STEP 3: Determine which slot to fill
+    let slot: "team1Id" | "team2Id";
+    if (nextMatch.side === "FINAL") {
+      slot = match.side === "LEFT" ? "team1Id" : "team2Id";
+    } else {
+      slot = (match.matchIndex ?? 0) % 2 === 0 ? "team1Id" : "team2Id";
+    }
+    console.log(`[PROGRESS] preferred slot=${slot} nextMatchId=${nextMatch.id} nextMatch.side=${nextMatch.side}`);
+
+    // STEP 4: Safety check - never overwrite a slot that is already filled
+    if (slot === "team1Id" && nextMatch.team1Id) slot = "team2Id";
+    if (slot === "team2Id" && nextMatch.team2Id) slot = "team1Id";
+    console.log(`[PROGRESS] final slot=${slot}`);
+
+    // STEP 5: Place the winner into the slot
+    await storage.updateMatch(nextMatch.id, { [slot]: winnerId });
+
+    // STEP 6: Re-fetch to see current state after write
+    const updated = await storage.getMatch(nextMatch.id);
+    if (!updated) return;
+    console.log(`[PROGRESS] after write: team1Id=${updated.team1Id} team2Id=${updated.team2Id}`);
+
+    // STEP 7: Both slots filled — real match ready, create chat and stop
+    if (updated.team1Id && updated.team2Id) {
+      if (!updated.isBye) {
+        await createMatchThreadsForAllMembers(
+          updated.id, updated.team1Id, updated.team2Id, updated.roundName ?? undefined
+        );
+      }
+      return;
+    }
+
+    // STEP 8: Only one slot filled — check if another match feeds into this one
+    const allMatches = await storage.getMatchesByTournament(tournamentId);
+    const opponentComing = allMatches.some(
+      (m: any) => m.nextMatchId === updated.id && m.status !== "completed"
+    );
+    console.log(`[PROGRESS] opponentComing=${opponentComing}`);
+
+    // STEP 9: Opponent is coming — stop and wait
+    if (opponentComing) return;
+
+    // STEP 10: No opponent ever coming — auto-advance as BYE and recurse
+    console.log(`[PROGRESS] auto-advancing as BYE into matchId=${updated.id}`);
+    await storage.updateMatch(updated.id, {
+      winnerId,
+      status: "completed",
+      isBye: 1,
+    });
+
+    await progressWinner(updated.id, winnerId, tournamentId);
   }
 
   // Helper: set winner and propagate bracket (reused by organizer endpoint and auto-resolve)
@@ -2285,7 +2284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const tournament = await storage.getTournament(match.tournamentId);
     if (tournament && tournament.format === "single_elimination") {
-      await advanceWinner(match, winnerId, tournament.id);
+      await progressWinner(match.id, winnerId, tournament.id);
     }
   }
 
@@ -2451,17 +2450,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Propagate winner to next round placeholder in single elimination
+      // Propagate winner to next round in single elimination
       console.log("[DEBUG] match.tournamentId=", match.tournamentId);
       const winnerTournament = await storage.getTournament(match.tournamentId);
       console.log("[DEBUG] tournament found=", !!winnerTournament, "format=", winnerTournament?.format);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
-        console.log(`[CASCADE] calling advanceWinner for matchId=${match.id}`);
         try {
-          await advanceWinner(match, winnerId, winnerTournament.id);
-          console.log("[CASCADE] advanceWinner completed successfully");
+          await progressWinner(match.id, winnerId, winnerTournament.id);
         } catch (err) {
-          console.log("[CASCADE] ERROR:", err);
+          console.log("[PROGRESS] ERROR:", err);
         }
 
         // Final match has no nextMatchId — mark tournament complete
@@ -2470,7 +2467,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           log('INFO', 'Tournament completed', { tournamentId: match.tournamentId });
         }
       } else {
-        console.log(`[CASCADE] SKIPPED - reason: ${!winnerTournament ? 'tournament not found' : `format=${winnerTournament.format}`}`);
+        console.log(`[PROGRESS] SKIPPED - reason: ${!winnerTournament ? 'tournament not found' : `format=${winnerTournament.format}`}`);
       }
 
       log('INFO', 'Match completed', { matchId: req.params.matchId, winnerId });
