@@ -1535,6 +1535,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               createdMatch.roundName ?? undefined
             );
           }
+
+          // Propagate BYE winners into next-round slots (single_elimination only)
+          if (tournament.format === 'single_elimination') {
+            const byeMatches = createdMatches
+              .filter((m: any) => m.isBye === 1 && m.winnerId)
+              .sort((a: any, b: any) => (a.round ?? 0) - (b.round ?? 0));
+            for (const byeMatch of byeMatches) {
+              await progressWinner(byeMatch.id, byeMatch.winnerId as string, tournament.id);
+            }
+          }
         }
       }
 
@@ -2730,18 +2740,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Power-of-2 check: bracket requires exactly 2, 4, 8, 16, 32, or 64 participants
-        const count = activeTeams.length;
-        const isPowerOf2 = count >= 2 && (count & (count - 1)) === 0;
-        if (!isPowerOf2) {
-          const lower = Math.pow(2, Math.floor(Math.log2(count)));
-          const upper = lower * 2;
-          const toRemove = count - lower;
-          const toAdd = upper - count;
-          return res.status(400).json({
-            error: `You have ${count} participants. Brackets require a power of 2 (${lower} or ${upper}). Please remove ${toRemove} participant${toRemove !== 1 ? 's' : ''} or add ${toAdd} more.`
-          });
-        }
       }
 
       log('INFO', 'Generating fixtures', {
@@ -2898,6 +2896,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await createMatchThreadsForAllMembers(match.id, match.team1Id, match.team2Id, match.roundName ?? roundName);
       }
 
+      // Propagate BYE winners into next-round slots (single_elimination only)
+      if (tournament.format === 'single_elimination') {
+        const byeMatches = createdMatches
+          .filter((m: any) => m.isBye === 1 && m.winnerId)
+          .sort((a: any, b: any) => (a.round ?? 0) - (b.round ?? 0));
+        for (const byeMatch of byeMatches) {
+          await progressWinner(byeMatch.id, byeMatch.winnerId as string, tournament.id);
+        }
+      }
+
       log('INFO', 'Fixtures generated successfully', {
         tournamentId: tournament.id,
         matchCount: createdMatches.length,
@@ -2977,6 +2985,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const matchData of generatedMatches) {
         const match = await storage.createMatch(matchData);
         createdMatches.push(match);
+      }
+
+      // Create match threads, skipping bye/placeholder slots for single_elimination
+      for (const match of createdMatches) {
+        if (tournament.format === 'single_elimination' && (!match.team1Id || !match.team2Id)) {
+          continue;
+        }
+        await createMatchThreadsForAllMembers(match.id, match.team1Id, match.team2Id, match.roundName ?? undefined);
+      }
+
+      // Propagate BYE winners into next-round slots (single_elimination only)
+      if (tournament.format === 'single_elimination') {
+        const byeMatches = createdMatches
+          .filter((m: any) => m.isBye === 1 && m.winnerId)
+          .sort((a: any, b: any) => (a.round ?? 0) - (b.round ?? 0));
+        for (const byeMatch of byeMatches) {
+          await progressWinner(byeMatch.id, byeMatch.winnerId as string, tournament.id);
+        }
       }
 
       res.status(201).json({
@@ -3662,9 +3688,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (matches && matches.length > 0) {
                 // Create all matches
                 const createdMatches = await Promise.all(matches.map((match) => storage.createMatch(match)));
-                // PERMANENT: Create match threads for all team members immediately
+                // Create match threads, skipping bye/placeholder slots for single_elimination
                 for (const createdMatch of createdMatches) {
+                  if (tournament.format === 'single_elimination' && (!createdMatch.team1Id || !createdMatch.team2Id)) {
+                    continue;
+                  }
                   await createMatchThreadsForAllMembers(createdMatch.id, createdMatch.team1Id, createdMatch.team2Id);
+                }
+                // Propagate BYE winners into next-round slots (single_elimination only)
+                if (tournament.format === 'single_elimination') {
+                  const byeMatches = createdMatches
+                    .filter((m: any) => m.isBye === 1 && m.winnerId)
+                    .sort((a: any, b: any) => (a.round ?? 0) - (b.round ?? 0));
+                  for (const byeMatch of byeMatches) {
+                    await progressWinner(byeMatch.id, byeMatch.winnerId as string, tournament.id);
+                  }
                 }
               }
             }

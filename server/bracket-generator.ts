@@ -23,14 +23,47 @@ function getRoundName(round: number, totalRounds: number): string {
 }
 
 /**
- * Two-sided single elimination bracket.
+ * Generates standard bracket seedings for a bracket of the given size (must be power of 2).
+ * Returns seedings[pos] = seed number for position pos (0-indexed).
  *
- * Requires teams.length to be exactly a power of 2.
- * Every R1 match has exactly 2 real teams. No BYEs. No phantom matches.
- * All match slots for all rounds are generated upfront.
- * Every R2+ match has prevMatch1Id and prevMatch2Id (backward pointers).
- * R1 matches have prevMatch fields null.
- * FINAL has nextMatchId null.
+ * Seed 1 is always at position 0 (top of LEFT half).
+ * Seed 2 is always at position halfSize (top of RIGHT half).
+ * This guarantees seeds 1 and 2 can only meet in the FINAL.
+ * When participantCount < bracketSize the highest seeds receive BYEs automatically,
+ * because seeds > participantCount correspond to empty (BYE) bracket slots.
+ */
+function generateSeedings(bracketSize: number): number[] {
+  let seeds = [1, 2];
+  while (seeds.length < bracketSize) {
+    const n = seeds.length * 2;
+    const next: number[] = [];
+    for (const s of seeds) {
+      next.push(s);
+      next.push(n + 1 - s);
+    }
+    seeds = next;
+  }
+  return seeds;
+}
+
+/**
+ * Two-sided single elimination bracket — Challonge-style logic.
+ *
+ * Accepts any participant count ≥ 2 (not just powers of 2).
+ * bracketSize = next power of 2 ≥ teams.length.
+ * byeCount = bracketSize − teams.length; BYEs are distributed to top seeds.
+ *
+ * teams[0] = seed 1 (best), teams[1] = seed 2, …, teams[n-1] = seed n.
+ * Assign seeds randomly or in registration order before calling this function
+ * if explicit seeding is not available.
+ *
+ * BYE R1 matches:  isBye=1, status="completed", winnerId=real participant.
+ * Real R1 matches: isBye=0, status="pending".
+ * R2+ matches:     team IDs null initially; filled by progressWinner propagation.
+ *
+ * After saving all matches to the DB, call progressWinner for every BYE match
+ * (sorted ascending by round) to propagate winners into R2+ slots and create
+ * match threads for rounds where both participants are already known.
  */
 export function generateSingleEliminationBracket(
   tournamentId: string,
@@ -39,10 +72,18 @@ export function generateSingleEliminationBracket(
   const n = teams.length;
   if (n < 2) return { matches: [] };
 
-  const totalRounds = Math.log2(n);
-  const halfSize = n / 2;
+  // Round participant count up to the next power of 2
+  const bracketSize = n <= 2 ? 2 : Math.pow(2, Math.ceil(Math.log2(n)));
+  const totalRounds = Math.log2(bracketSize);
+  const halfSize = bracketSize / 2;
 
-  // Pre-assign all IDs upfront so every slot can reference its neighbors
+  // seedings[pos] = seed number at that bracket position (0-indexed).
+  // teams[seed-1] is the participant; seeds > n are BYE slots.
+  const seedings = generateSeedings(bracketSize);
+  const getTeamBySeed = (seed: number): Team | null =>
+    seed >= 1 && seed <= n ? (teams[seed - 1] ?? null) : null;
+
+  // Pre-assign all match IDs upfront so every slot can reference its neighbors
   const idMap: Record<string, Record<number, Record<number, string>>> = {
     LEFT: {}, RIGHT: {}, FINAL: {},
   };
@@ -56,8 +97,8 @@ export function generateSingleEliminationBracket(
     }
   }
   idMap.FINAL[totalRounds] = { 0: randomUUID() };
-
   const finalId = idMap.FINAL[totalRounds][0];
+
   const result: BracketMatch[] = [];
 
   function makeMatch(
@@ -70,73 +111,81 @@ export function generateSingleEliminationBracket(
     nextMatchId: string | null,
     prevMatch1Id: string | null,
     prevMatch2Id: string | null,
+    isByeMatch = false,
   ): BracketMatch {
+    const winner = isByeMatch ? (team1 ?? team2) : null;
     return {
-      id,
-      tournamentId,
-      round,
-      matchIndex,
-      matchPosition: matchIndex,
-      side,
-      nextMatchId,
-      prevMatch1Id,
-      prevMatch2Id,
+      id, tournamentId, round, matchIndex, matchPosition: matchIndex, side,
+      nextMatchId, prevMatch1Id, prevMatch2Id,
       team1Id: team1?.id ?? null,
       team2Id: team2?.id ?? null,
-      winnerId: null,
-      status: "pending",
-      team1Score: null,
-      team2Score: null,
+      winnerId: winner?.id ?? null,
+      status: isByeMatch ? "completed" : "pending",
+      team1Score: null, team2Score: null,
       roundName: getRoundName(round, totalRounds),
-      isBye: 0,
+      isBye: isByeMatch ? 1 : 0,
       matchType: "auto" as const,
     };
   }
 
   // ── LEFT side ─────────────────────────────────────────────────────────────
+  // Seedings positions 0 .. halfSize-1
   for (let r = 1; r < totalRounds; r++) {
     const count = halfSize / Math.pow(2, r);
     for (let i = 0; i < count; i++) {
-      const team1 = r === 1 ? (teams[i * 2] ?? null) : null;
-      const team2 = r === 1 ? (teams[i * 2 + 1] ?? null) : null;
-
       const nextMatchId = r < totalRounds - 1
         ? idMap.LEFT[r + 1][Math.floor(i / 2)]
         : finalId;
-
       const prev1 = r > 1 ? idMap.LEFT[r - 1][i * 2] : null;
       const prev2 = r > 1 ? idMap.LEFT[r - 1][i * 2 + 1] : null;
 
-      result.push(makeMatch(idMap.LEFT[r][i], r, i, "LEFT", team1, team2, nextMatchId, prev1, prev2));
+      let team1: Team | null = null;
+      let team2: Team | null = null;
+      let isByeMatch = false;
+
+      if (r === 1) {
+        team1 = getTeamBySeed(seedings[i * 2]);
+        team2 = getTeamBySeed(seedings[i * 2 + 1]);
+        isByeMatch = !team1 || !team2;
+      }
+
+      result.push(makeMatch(idMap.LEFT[r][i], r, i, "LEFT", team1, team2, nextMatchId, prev1, prev2, isByeMatch));
     }
   }
 
   // ── RIGHT side ────────────────────────────────────────────────────────────
+  // Seedings positions halfSize .. bracketSize-1
   for (let r = 1; r < totalRounds; r++) {
     const count = halfSize / Math.pow(2, r);
     for (let i = 0; i < count; i++) {
-      const team1 = r === 1 ? (teams[halfSize + i * 2] ?? null) : null;
-      const team2 = r === 1 ? (teams[halfSize + i * 2 + 1] ?? null) : null;
-
       const nextMatchId = r < totalRounds - 1
         ? idMap.RIGHT[r + 1][Math.floor(i / 2)]
         : finalId;
-
       const prev1 = r > 1 ? idMap.RIGHT[r - 1][i * 2] : null;
       const prev2 = r > 1 ? idMap.RIGHT[r - 1][i * 2 + 1] : null;
 
-      result.push(makeMatch(idMap.RIGHT[r][i], r, i, "RIGHT", team1, team2, nextMatchId, prev1, prev2));
+      let team1: Team | null = null;
+      let team2: Team | null = null;
+      let isByeMatch = false;
+
+      if (r === 1) {
+        team1 = getTeamBySeed(seedings[halfSize + i * 2]);
+        team2 = getTeamBySeed(seedings[halfSize + i * 2 + 1]);
+        isByeMatch = !team1 || !team2;
+      }
+
+      result.push(makeMatch(idMap.RIGHT[r][i], r, i, "RIGHT", team1, team2, nextMatchId, prev1, prev2, isByeMatch));
     }
   }
 
   // ── FINAL ─────────────────────────────────────────────────────────────────
   // 2-team bracket (totalRounds=1): teams play directly in the FINAL.
-  // N-team bracket: LEFT last-round winner → team1Id, RIGHT last-round winner → team2Id.
+  // Larger brackets: FINAL team slots are populated via winner propagation.
   const finalTeam1 = totalRounds === 1 ? (teams[0] ?? null) : null;
   const finalTeam2 = totalRounds === 1 ? (teams[1] ?? null) : null;
   const finalPrev1 = totalRounds > 1 ? idMap.LEFT[totalRounds - 1][0] : null;
   const finalPrev2 = totalRounds > 1 ? idMap.RIGHT[totalRounds - 1][0] : null;
-  result.push(makeMatch(finalId, totalRounds, 0, "FINAL", finalTeam1, finalTeam2, null, finalPrev1, finalPrev2));
+  result.push(makeMatch(finalId, totalRounds, 0, "FINAL", finalTeam1, finalTeam2, null, finalPrev1, finalPrev2, false));
 
   return { matches: result };
 }
