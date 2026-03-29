@@ -2144,30 +2144,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
-    // STEP 1: Find the next match by querying which match has this one as a feeder.
-    // prevMatch1Id → winner fills team1Id
-    // prevMatch2Id → winner fills team2Id
-    const nextMatch = await storage.getMatchByPrevMatchId(matchId);
+    // STEP 1: Get the completed match and find the next bracket slot via nextMatchId
+    const match = await storage.getMatch(matchId);
+    if (!match?.nextMatchId) return;
 
-    let resolvedNext: typeof nextMatch;
+    const nextMatch = await storage.getMatch(match.nextMatchId);
+    if (!nextMatch) return;
+
+    // STEP 2: Determine slot using the connected bracket's prev fields.
+    // nextMatch.prevMatch1Id === match.id → this match feeds team1Id
+    // nextMatch.prevMatch2Id === match.id → this match feeds team2Id
+    // Neither matches (bracket created before prev fields existed) → fallback to matchIndex % 2
     let slot: "team1Id" | "team2Id";
-
-    if (nextMatch) {
-      // New system: slot is determined by which prev field points to this match
-      resolvedNext = nextMatch;
-      slot = nextMatch.prevMatch1Id === matchId ? "team1Id" : "team2Id";
+    if (nextMatch.prevMatch1Id === matchId) {
+      slot = "team1Id";
+    } else if (nextMatch.prevMatch2Id === matchId) {
+      slot = "team2Id";
     } else {
-      // Legacy fallback: old brackets use nextMatchId + side-based slot logic
-      const match = await storage.getMatch(matchId);
-      if (!match?.nextMatchId) return;
-      resolvedNext = await storage.getMatch(match.nextMatchId);
-      if (!resolvedNext) return;
-      if (resolvedNext.side === "FINAL") {
-        slot = match.side === "LEFT" ? "team1Id" : "team2Id";
-      } else {
-        slot = (match.matchIndex ?? 0) % 2 === 0 ? "team1Id" : "team2Id";
-      }
+      slot = (match.matchIndex ?? 0) % 2 === 0 ? "team1Id" : "team2Id";
     }
+
+    const resolvedNext = nextMatch;
 
     // STEP 2: Fill the slot.
     // Each feeder owns exactly one slot, so concurrent calls cannot collide.
