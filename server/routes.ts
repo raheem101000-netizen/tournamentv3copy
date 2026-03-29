@@ -2144,39 +2144,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
-    // STEP 1: Get the completed match and find the next bracket slot via nextMatchId
-    const match = await storage.getMatch(matchId);
-    if (!match) return;
+    // RULE 4: Find the next slot exclusively via prevMatch backward pointers.
+    // getMatchByPrevMatchId queries: WHERE prev_match1_id = matchId OR prev_match2_id = matchId
+    // Returns null only when matchId is the FINAL (nothing points to it).
+    const nextMatch = await storage.getMatchByPrevMatchId(matchId);
+    if (!nextMatch) return; // FINAL — bracket is complete
 
-    const nextMatch = match.nextMatchId
-      ? await storage.getMatch(match.nextMatchId)
-      : await storage.getMatchByPrevMatchId(matchId);
-    if (!nextMatch) return;
-
-    // STEP 2: Determine slot using the connected bracket's prev fields.
-    // nextMatch.prevMatch1Id === match.id → this match feeds team1Id
-    // nextMatch.prevMatch2Id === match.id → this match feeds team2Id
-    // Neither matches (bracket created before prev fields existed) → fallback to matchIndex % 2
+    // RULE 5: Slot assignment is hardcoded from the bracket's wiring.
+    // No matchIndex % 2. No side guessing. No fallback.
+    // If neither field matches, the bracket data is corrupted — throw immediately.
     let slot: "team1Id" | "team2Id";
     if (nextMatch.prevMatch1Id === matchId) {
       slot = "team1Id";
     } else if (nextMatch.prevMatch2Id === matchId) {
       slot = "team2Id";
     } else {
-      slot = (match.matchIndex ?? 0) % 2 === 0 ? "team1Id" : "team2Id";
+      throw new Error(
+        `[progressWinner] Data error: match ${matchId} is not wired into next match ${nextMatch.id}. ` +
+        `prevMatch1Id=${nextMatch.prevMatch1Id} prevMatch2Id=${nextMatch.prevMatch2Id}`
+      );
     }
 
-    const resolvedNext = nextMatch;
+    // Place the winner into their reserved slot
+    await storage.updateMatch(nextMatch.id, { [slot]: winnerId });
 
-    // STEP 2: Fill the slot.
-    // Each feeder owns exactly one slot, so concurrent calls cannot collide.
-    await storage.updateMatch(resolvedNext.id, { [slot]: winnerId });
-
-    // STEP 3: Re-fetch to see the current state after writing
-    const updated = await storage.getMatch(resolvedNext.id);
+    // Re-fetch to see current state
+    const updated = await storage.getMatch(nextMatch.id);
     if (!updated) return;
 
-    // STEP 4: Both slots filled — the match is ready to play
+    // RULE 3: Both slots filled with real players — create match chat now
     if (updated.team1Id && updated.team2Id) {
       if (!updated.isBye) {
         await createMatchThreadsForAllMembers(
@@ -2186,30 +2182,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return;
     }
 
-    // STEP 5: One slot filled — check if an opponent will ever arrive.
-    // CASE 1 — New bracket: both prevMatch fields are populated, use them directly.
-    // CASE 2 — Old bracket: prevMatch fields are null, scan nextMatchId pointers instead.
-    if (resolvedNext.prevMatch1Id && resolvedNext.prevMatch2Id) {
-      // New bracket: check the other feeder's completion status
-      const otherPrevId = slot === "team1Id"
-        ? resolvedNext.prevMatch2Id
-        : resolvedNext.prevMatch1Id;
-      if (otherPrevId) {
-        const otherFeeder = await storage.getMatch(otherPrevId);
-        if (otherFeeder && otherFeeder.status !== "completed") return;
-      }
-    } else {
-      // Old bracket: find all real, incomplete matches whose nextMatchId points here
-      const allMatches = await storage.getMatchesByTournament(tournamentId);
-      const opponentComing = allMatches.some(
-        (m: any) => m.nextMatchId === resolvedNext.id
-          && m.status !== "completed"
-          && (m.team1Id || m.team2Id)
-      );
-      if (opponentComing) return;
+    // RULE 6: One slot filled — check if opponent is coming via the other prev field
+    const otherPrevId = slot === "team1Id" ? nextMatch.prevMatch2Id : nextMatch.prevMatch1Id;
+
+    if (otherPrevId) {
+      const otherFeeder = await storage.getMatch(otherPrevId);
+      if (otherFeeder && otherFeeder.status !== "completed") return; // opponent coming — wait
     }
 
-    // No feeder for the other slot — auto-advance as BYE and continue up the bracket
+    // Other feeder is null (no opponent exists) or already completed (BYE cascade) —
+    // auto-advance this player as BYE and continue up the bracket
     await storage.updateMatch(updated.id, { winnerId, status: "completed", isBye: 1 });
     await progressWinner(updated.id, winnerId, tournamentId);
   }

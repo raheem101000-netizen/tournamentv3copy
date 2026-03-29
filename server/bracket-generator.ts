@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto";
 import type { Team, Match, InsertMatch } from "../shared/schema.js";
 
-// InsertMatch extended with a required pre-assigned id (for bracket linking via prevMatch1Id/prevMatch2Id)
 export type BracketMatch = InsertMatch & { id: string };
 
 export interface BracketGenerationResult {
@@ -26,15 +25,12 @@ function getRoundName(round: number, totalRounds: number): string {
 /**
  * Two-sided single elimination bracket.
  *
- * Layout:
- *   LEFT side  → progresses left→center
- *   RIGHT side → progresses right→center
- *   FINAL      → center (LEFT winner vs RIGHT winner)
- *
- * Each match stores prevMatch1Id (feeds team1Id) and prevMatch2Id (feeds team2Id).
- * Winner progression finds the next match at runtime by querying for the match
- * whose prevMatch1Id or prevMatch2Id equals the completed match's id.
- * No nextMatchId is stored or needed.
+ * Rules:
+ *   - ALL match slots for ALL rounds are generated upfront, even if empty.
+ *   - Every R2+ match has nextMatchId (forward) AND prevMatch1Id/prevMatch2Id (backward).
+ *   - R1 matches have nextMatchId set, prevMatch fields null.
+ *   - FINAL has prevMatch fields set, nextMatchId null.
+ *   - No slots are created later. No fallback logic. No guessing.
  */
 export function generateSingleEliminationBracket(
   tournamentId: string,
@@ -45,17 +41,12 @@ export function generateSingleEliminationBracket(
 
   const bracketSize = Math.pow(2, Math.ceil(Math.log2(n)));
   const totalRounds = Math.log2(bracketSize);
-  const halfSize = bracketSize / 2; // slots per side
+  const halfSize = bracketSize / 2;
 
-  // ── Pre-assign IDs ─────────────────────────────────────────────────────────
-  // idMap["LEFT" | "RIGHT"][round][matchIndex] = uuid
-  // idMap["FINAL"][totalRounds][0]             = uuid
+  // Pre-assign all IDs upfront so every slot can reference its neighbors
   const idMap: Record<string, Record<number, Record<number, string>>> = {
-    LEFT: {},
-    RIGHT: {},
-    FINAL: {},
+    LEFT: {}, RIGHT: {}, FINAL: {},
   };
-
   for (let r = 1; r < totalRounds; r++) {
     idMap.LEFT[r] = {};
     idMap.RIGHT[r] = {};
@@ -70,7 +61,6 @@ export function generateSingleEliminationBracket(
   const finalId = idMap.FINAL[totalRounds][0];
   const result: BracketMatch[] = [];
 
-  // ── Helper to build a match ──────────────────────────────────────────────
   function makeMatch(
     id: string,
     round: number,
@@ -78,8 +68,9 @@ export function generateSingleEliminationBracket(
     side: string,
     team1: Team | null,
     team2: Team | null,
-    prevMatch1Id: string | null = null, // match whose winner fills team1Id
-    prevMatch2Id: string | null = null, // match whose winner fills team2Id
+    nextMatchId: string | null,   // forward pointer — where this winner goes
+    prevMatch1Id: string | null,  // backward pointer — match whose winner fills team1Id
+    prevMatch2Id: string | null,  // backward pointer — match whose winner fills team2Id
   ): BracketMatch {
     const hasBye = (!!team1 && !team2) || (!team1 && !!team2);
     const winner = hasBye ? (team1 ?? team2) : null;
@@ -90,6 +81,7 @@ export function generateSingleEliminationBracket(
       matchIndex,
       matchPosition: matchIndex,
       side,
+      nextMatchId,
       prevMatch1Id,
       prevMatch2Id,
       team1Id: team1?.id ?? null,
@@ -104,61 +96,65 @@ export function generateSingleEliminationBracket(
     };
   }
 
-  // ── LEFT side ────────────────────────────────────────────────────────────
+  // ── LEFT side ─────────────────────────────────────────────────────────────
   for (let r = 1; r < totalRounds; r++) {
     const count = halfSize / Math.pow(2, r);
     for (let i = 0; i < count; i++) {
-      let team1: Team | null = null;
-      let team2: Team | null = null;
-      if (r === 1) {
-        team1 = teams[i * 2] ?? null;
-        team2 = teams[i * 2 + 1] ?? null;
-      }
-      // R1 matches have no predecessors; R2+ matches point back to their two feeders
-      const prev1 = r > 1 ? (idMap.LEFT[r - 1]?.[i * 2] ?? null) : null;
-      const prev2 = r > 1 ? (idMap.LEFT[r - 1]?.[i * 2 + 1] ?? null) : null;
-      result.push(makeMatch(idMap.LEFT[r][i], r, i, "LEFT", team1, team2, prev1, prev2));
+      // Teams only assigned in R1; later rounds start empty
+      const team1 = r === 1 ? (teams[i * 2] ?? null) : null;
+      const team2 = r === 1 ? (teams[i * 2 + 1] ?? null) : null;
+
+      // Forward: last LEFT round feeds FINAL, earlier rounds feed next LEFT round
+      const nextMatchId = r < totalRounds - 1
+        ? idMap.LEFT[r + 1][Math.floor(i / 2)]
+        : finalId;
+
+      // Backward: R1 has no predecessors; R2+ point to their two feeder matches
+      const prev1 = r > 1 ? idMap.LEFT[r - 1][i * 2] : null;
+      const prev2 = r > 1 ? idMap.LEFT[r - 1][i * 2 + 1] : null;
+
+      result.push(makeMatch(idMap.LEFT[r][i], r, i, "LEFT", team1, team2, nextMatchId, prev1, prev2));
     }
   }
 
-  // ── RIGHT side ───────────────────────────────────────────────────────────
+  // ── RIGHT side ────────────────────────────────────────────────────────────
   for (let r = 1; r < totalRounds; r++) {
     const count = halfSize / Math.pow(2, r);
     for (let i = 0; i < count; i++) {
-      let team1: Team | null = null;
-      let team2: Team | null = null;
-      if (r === 1) {
-        team1 = teams[halfSize + i * 2] ?? null;
-        team2 = teams[halfSize + i * 2 + 1] ?? null;
-      }
-      const prev1 = r > 1 ? (idMap.RIGHT[r - 1]?.[i * 2] ?? null) : null;
-      const prev2 = r > 1 ? (idMap.RIGHT[r - 1]?.[i * 2 + 1] ?? null) : null;
-      result.push(makeMatch(idMap.RIGHT[r][i], r, i, "RIGHT", team1, team2, prev1, prev2));
+      const team1 = r === 1 ? (teams[halfSize + i * 2] ?? null) : null;
+      const team2 = r === 1 ? (teams[halfSize + i * 2 + 1] ?? null) : null;
+
+      const nextMatchId = r < totalRounds - 1
+        ? idMap.RIGHT[r + 1][Math.floor(i / 2)]
+        : finalId;
+
+      const prev1 = r > 1 ? idMap.RIGHT[r - 1][i * 2] : null;
+      const prev2 = r > 1 ? idMap.RIGHT[r - 1][i * 2 + 1] : null;
+
+      result.push(makeMatch(idMap.RIGHT[r][i], r, i, "RIGHT", team1, team2, nextMatchId, prev1, prev2));
     }
   }
 
-  // ── FINAL ────────────────────────────────────────────────────────────────
-  // 2-team bracket (totalRounds=1): teams play directly in the FINAL, no preliminaries.
-  // N-team bracket: LEFT semifinal winner → team1Id, RIGHT semifinal winner → team2Id.
+  // ── FINAL ─────────────────────────────────────────────────────────────────
+  // 2-team bracket (totalRounds=1): teams play directly in the FINAL.
+  // N-team bracket: LEFT last-round winner → team1Id, RIGHT last-round winner → team2Id.
   const finalTeam1 = totalRounds === 1 ? (teams[0] ?? null) : null;
   const finalTeam2 = totalRounds === 1 ? (teams[1] ?? null) : null;
-  const finalPrev1 = totalRounds > 1 ? (idMap.LEFT[totalRounds - 1]?.[0] ?? null) : null;
-  const finalPrev2 = totalRounds > 1 ? (idMap.RIGHT[totalRounds - 1]?.[0] ?? null) : null;
-  result.push(makeMatch(finalId, totalRounds, 0, "FINAL", finalTeam1, finalTeam2, finalPrev1, finalPrev2));
+  const finalPrev1 = totalRounds > 1 ? idMap.LEFT[totalRounds - 1][0] : null;
+  const finalPrev2 = totalRounds > 1 ? idMap.RIGHT[totalRounds - 1][0] : null;
+  result.push(makeMatch(finalId, totalRounds, 0, "FINAL", finalTeam1, finalTeam2, null, finalPrev1, finalPrev2));
 
-  // ── Propagate byes ────────────────────────────────────────────────────────
-  // Build a forward lookup from prevMatch fields so we can find each match's parent.
-  const parentOf = new Map<string, BracketMatch>(); // childId → parent match
+  // ── Propagate BYEs into parent slots at generation time ───────────────────
+  // Any R1 match with one team and no opponent is a BYE — pre-fill the parent slot.
+  const parentOf = new Map<string, BracketMatch>();
   for (const m of result) {
     if (m.prevMatch1Id) parentOf.set(m.prevMatch1Id, m);
     if (m.prevMatch2Id) parentOf.set(m.prevMatch2Id, m);
   }
-
   for (const m of result) {
     if (m.isBye && m.winnerId) {
       const parent = parentOf.get(m.id);
       if (!parent) continue;
-      // Slot: prevMatch1Id feeds team1Id, prevMatch2Id feeds team2Id
       if (parent.prevMatch1Id === m.id) {
         parent.team1Id = m.winnerId;
       } else {
@@ -170,7 +166,7 @@ export function generateSingleEliminationBracket(
   return { matches: result };
 }
 
-// ── Round Robin (unchanged) ─────────────────────────────────────────────────
+// ── Round Robin ───────────────────────────────────────────────────────────────
 export function generateRoundRobinBracket(
   tournamentId: string,
   teams: Team[]
@@ -195,57 +191,30 @@ export function generateRoundRobinBracket(
 
       if (homeTeam && awayTeam) {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: homeTeam.id,
-          team2Id: awayTeam.id,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "pending",
-          winnerId: null,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 0,
+          id: randomUUID(), tournamentId,
+          team1Id: homeTeam.id, team2Id: awayTeam.id,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "pending", winnerId: null,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 0,
         });
       } else if (homeTeam && !awayTeam) {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: homeTeam.id,
-          team2Id: null,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "completed",
-          winnerId: homeTeam.id,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 1,
+          id: randomUUID(), tournamentId,
+          team1Id: homeTeam.id, team2Id: null,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "completed", winnerId: homeTeam.id,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 1,
         });
       } else if (!homeTeam && awayTeam) {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: awayTeam.id,
-          team2Id: null,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "completed",
-          winnerId: awayTeam.id,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 1,
+          id: randomUUID(), tournamentId,
+          team1Id: awayTeam.id, team2Id: null,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "completed", winnerId: awayTeam.id,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 1,
         });
       }
     }
@@ -254,7 +223,7 @@ export function generateRoundRobinBracket(
   return { matches: out };
 }
 
-// ── Swiss System (unchanged) ────────────────────────────────────────────────
+// ── Swiss System ──────────────────────────────────────────────────────────────
 export function generateSwissSystemRound(
   tournamentId: string,
   teams: Team[],
@@ -269,39 +238,21 @@ export function generateSwissSystemRound(
     for (let i = 0; i < shuffled.length; i += 2) {
       if (i + 1 < shuffled.length) {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: shuffled[i].id,
-          team2Id: shuffled[i + 1].id,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "pending",
-          winnerId: null,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 0,
+          id: randomUUID(), tournamentId,
+          team1Id: shuffled[i].id, team2Id: shuffled[i + 1].id,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "pending", winnerId: null,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 0,
         });
       } else {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: shuffled[i].id,
-          team2Id: null,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "completed",
-          winnerId: shuffled[i].id,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 1,
+          id: randomUUID(), tournamentId,
+          team1Id: shuffled[i].id, team2Id: null,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "completed", winnerId: shuffled[i].id,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 1,
         });
       }
     }
@@ -335,76 +286,25 @@ export function generateSwissSystemRound(
         const opp = prevOpponents.get(t1.id);
         if (!opp || !opp.has(c.id)) { t2 = c; break; }
       }
-
       if (t2) {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: t1.id,
-          team2Id: t2.id,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "pending",
-          winnerId: null,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 0,
+          id: randomUUID(), tournamentId,
+          team1Id: t1.id, team2Id: t2.id,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "pending", winnerId: null,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 0,
         });
         paired.add(t1.id);
         paired.add(t2.id);
       } else {
         out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: t1.id,
-          team2Id: null,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "completed",
-          winnerId: t1.id,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 1,
-        });
-        paired.add(t1.id);
-      }
-    }
-  }
-  return { matches: out };
-}
-  winnerId: null,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 0,
-        });
-        paired.add(t1.id);
-        paired.add(t2.id);
-      } else {
-        out.push({
-          id: randomUUID(),
-          tournamentId,
-          team1Id: t1.id,
-          team2Id: null,
-          round,
-          matchIndex: null as any,
-          matchPosition: null as any,
-          side: null as any,
-          nextMatchId: null,
-          status: "completed",
-          winnerId: t1.id,
-          team1Score: null,
-          team2Score: null,
-          roundName: null as any,
-          isBye: 1,
+          id: randomUUID(), tournamentId,
+          team1Id: t1.id, team2Id: null,
+          round, matchIndex: null as any, matchPosition: null as any,
+          side: null as any, nextMatchId: null,
+          status: "completed", winnerId: t1.id,
+          team1Score: null, team2Score: null, roundName: null as any, isBye: 1,
         });
         paired.add(t1.id);
       }
