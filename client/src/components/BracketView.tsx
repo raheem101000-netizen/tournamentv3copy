@@ -1,9 +1,42 @@
+import { useRef, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Trophy, Clock, CheckCircle2 } from "lucide-react";
 import MatchCard from "./MatchCard";
 import type { Match, Team } from "@shared/schema";
+
+/** Scales a bracket container to fit its parent width without scrolling. */
+function useFitScale(deps: any[]) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [scaledHeight, setScaledHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    function compute() {
+      const outer = outerRef.current;
+      const inner = innerRef.current;
+      if (!outer || !inner) return;
+      // Temporarily remove transform to measure natural dimensions
+      inner.style.transform = "none";
+      const nw = inner.scrollWidth;
+      const nh = inner.scrollHeight;
+      inner.style.transform = "";
+      const aw = outer.clientWidth;
+      const s = nw > aw && aw > 0 ? aw / nw : 1;
+      setScale(s);
+      setScaledHeight(nh * s);
+    }
+    compute();
+    const ro = new ResizeObserver(compute);
+    if (outerRef.current) ro.observe(outerRef.current);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { outerRef, innerRef, scale, scaledHeight };
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -356,9 +389,10 @@ function SingleEliminationBracket({
   teams: TeamWithMembers[];
   onMatchClick?: (id: string) => void;
 }) {
-  if (matches.length === 0) return null;
-
   const scale = getBracketScale(matches.length);
+  const { outerRef, innerRef, scale: fitScale, scaledHeight } = useFitScale([matches.length]);
+
+  if (matches.length === 0) return null;
 
   const getTeam = (id: string | null | undefined) =>
     teams.find((t) => t.id === id) as TeamWithMembers | undefined;
@@ -368,7 +402,13 @@ function SingleEliminationBracket({
 
   if (!hasSides) {
     // Legacy bracket: render old single-column layout
-    return <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} scale={scale} />;
+    return (
+      <div ref={outerRef} className="w-full overflow-hidden" style={{ height: scaledHeight }}>
+        <div ref={innerRef} className="w-fit" style={{ transform: fitScale < 1 ? `scale(${fitScale})` : undefined, transformOrigin: "top left" }}>
+          <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} scale={scale} />
+        </div>
+      </div>
+    );
   }
 
   const finalMatch = matches.find((m) => m.side === "FINAL");
@@ -462,7 +502,8 @@ function SingleEliminationBracket({
   // 2-team bracket: just show the FINAL
   if (isFinalOnly) {
     return (
-      <div className="w-full flex justify-center py-4">
+      <div ref={outerRef} className="w-full overflow-hidden" style={{ height: scaledHeight }}>
+        <div ref={innerRef} className="w-fit mx-auto py-4" style={{ transform: fitScale < 1 ? `scale(${fitScale})` : undefined, transformOrigin: "top left" }}>
         <div style={{ width: scale.colW }}>
           <p className="text-xs font-semibold text-amber-500 text-center mb-2">Grand Final</p>
           {finalMatch ? (
@@ -477,13 +518,18 @@ function SingleEliminationBracket({
             <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">TBD</div>
           )}
         </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full overflow-x-auto pb-6">
-      <div className="w-fit mx-auto">
+    <div ref={outerRef} className="w-full overflow-hidden pb-2" style={{ height: scaledHeight }}>
+      <div
+        ref={innerRef}
+        className="w-fit mx-auto"
+        style={{ transform: fitScale < 1 ? `scale(${fitScale})` : undefined, transformOrigin: "top left" }}
+      >
       {/* Round name headers */}
       <div className="flex mb-1 min-w-max">
         {leftRounds.map((r) => (
