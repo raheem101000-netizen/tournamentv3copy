@@ -2408,8 +2408,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log("[PROGRESS] ERROR:", err);
         }
 
-        // Final match has no nextMatchId — mark tournament complete
-        if (!match.nextMatchId && (match as any).matchType !== 'manual') {
+        // Final match has side "FINAL" — mark tournament complete
+        // Using side instead of !nextMatchId because new brackets don't set nextMatchId at all
+        if (match.side === "FINAL" && (match as any).matchType !== 'manual') {
           await storage.updateTournament(match.tournamentId, { status: "completed" });
           log('INFO', 'Tournament completed', { tournamentId: match.tournamentId });
         }
@@ -2531,7 +2532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Backfill sourceMatch1Id / sourceMatch2Id for all matches in a tournament.
+  // Backfill prevMatch1Id / prevMatch2Id for all matches in a tournament (legacy brackets).
   // Safe to call multiple times — only writes to matches that still have both fields null.
   app.post("/api/tournaments/:tournamentId/backfill-sources", async (req, res) => {
     try {
@@ -2564,16 +2565,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
 
-        // Only write if both source fields are currently null
-        if ((match as any).sourceMatch1Id || (match as any).sourceMatch2Id) { skipped++; continue; }
+        // Only write if both prev fields are currently null
+        if (match.prevMatch1Id || match.prevMatch2Id) { skipped++; continue; }
 
         const src1 = feeders[0]?.id ?? null;
         const src2 = feeders[1]?.id ?? null;
 
         await storage.updateMatch(match.id, {
-          sourceMatch1Id: src1,
-          sourceMatch2Id: src2,
-        } as any);
+          prevMatch1Id: src1,
+          prevMatch2Id: src2,
+        });
         updated++;
       }
 
