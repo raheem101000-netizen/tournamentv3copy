@@ -60,9 +60,9 @@ export const matches = pgTable("matches", {
   matchPosition: integer("match_position"),
   matchIndex: integer("match_index"),
   side: text("side"),
-  nextMatchId: varchar("next_match_id"),
-  sourceMatch1Id: varchar("source_match1_id"),
-  sourceMatch2Id: varchar("source_match2_id"),
+  nextMatchId: varchar("next_match_id"),       // legacy — kept for old brackets only
+  prevMatch1Id: varchar("prev_match1_id"),      // match whose winner fills team1Id
+  prevMatch2Id: varchar("prev_match2_id"),      // match whose winner fills team2Id
   status: text("status", { enum: ["pending", "in_progress", "completed"] }).notNull().default("pending"),
   team1Score: integer("team1_score"),
   team2Score: integer("team2_score"),
@@ -77,6 +77,8 @@ export const matches = pgTable("matches", {
 }, (table) => [
   index("idx_matches_tournament_id").on(table.tournamentId),
   index("idx_matches_status").on(table.status),
+  index("idx_matches_prev_match1").on(table.prevMatch1Id),
+  index("idx_matches_prev_match2").on(table.prevMatch2Id),
 ]);
 
 export const chatMessages = pgTable("chat_messages", {
