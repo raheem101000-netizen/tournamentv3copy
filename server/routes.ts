@@ -2194,10 +2194,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return;
     }
 
-    // STEP 8: Only one slot filled — check if another match feeds into this one
+    // STEP 8: Only one slot filled — check if another match feeds into this one.
+    // Phantom matches (both teams null) are excluded: they will never produce a real player.
     const allMatches = await storage.getMatchesByTournament(tournamentId);
     const opponentComing = allMatches.some(
-      (m: any) => m.nextMatchId === updated.id && m.status !== "completed"
+      (m: any) => m.nextMatchId === updated.id && m.status !== "completed" && (m.team1Id || m.team2Id)
     );
     console.log(`[PROGRESS] opponentComing=${opponentComing}`);
 
