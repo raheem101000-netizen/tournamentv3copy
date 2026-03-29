@@ -2171,9 +2171,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     console.log(`[PROGRESS] preferred slot=${slot} nextMatchId=${nextMatch.id} nextMatch.side=${nextMatch.side}`);
 
-    // STEP 4: Safety check - never overwrite a slot that is already filled
-    if (slot === "team1Id" && nextMatch.team1Id) slot = "team2Id";
-    if (slot === "team2Id" && nextMatch.team2Id) slot = "team1Id";
+    // STEP 4: Re-fetch next match for live slot state before writing.
+    // nextMatch (from step 2) may be stale if a concurrent progressWinner call
+    // already wrote to it. Using live state prevents slot overwrites.
+    const liveNext = await storage.getMatch(nextMatch.id);
+    if (!liveNext) return;
+    if (liveNext.team1Id && liveNext.team2Id) return; // both slots already filled, nothing to do
+    if (slot === "team1Id" && liveNext.team1Id) slot = "team2Id";
+    if (slot === "team2Id" && liveNext.team2Id) slot = "team1Id";
     console.log(`[PROGRESS] final slot=${slot}`);
 
     // STEP 5: Place the winner into the slot
