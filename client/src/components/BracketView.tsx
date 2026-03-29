@@ -28,8 +28,8 @@ interface BracketViewProps {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Height (px) of one R1 slot — card ~80px + 12px gap */
-const SLOT_H = 92;
+/** Height (px) of one R1 slot — card ~68px + 12px gap */
+const SLOT_H = 80;
 /** Fixed width of each round column */
 const COL_W = 140;
 /** Width of connector stub */
@@ -121,10 +121,15 @@ function MatchBox({
         isCompleted ? "border-border bg-card" : "border-border/70 bg-card/80"
       }`}
     >
-      <PlayerSlot team={team1} teamId={match.team1Id} score={match.team1Score} />
-      <div className="border-t border-border/30 my-0.5" />
-      <PlayerSlot team={team2} teamId={match.team2Id} score={match.team2Score} />
-
+      <div className="flex items-center gap-1">
+        <div className="flex-1 min-w-0">
+          <PlayerSlot team={team1} teamId={match.team1Id} score={match.team1Score} />
+        </div>
+        <span className="text-[9px] text-muted-foreground/60 shrink-0 px-0.5">vs</span>
+        <div className="flex-1 min-w-0">
+          <PlayerSlot team={team2} teamId={match.team2Id} score={match.team2Score} />
+        </div>
+      </div>
       {/* Status */}
       <div className="mt-1 flex items-center gap-0.5">
         {isCompleted ? (

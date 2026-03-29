@@ -1664,12 +1664,26 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {selectedTournamentTeams.map((team) => {
                   const memberUsername = (team as any).members?.[0]?.username;
+                  const teamLogo = (team as any).teamLogoUrl || (team as any).members?.[0]?.avatarUrl;
+                  const initials = team.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
                   return (
                     <Card key={team.id} className="overflow-hidden">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-base truncate" title={`@${memberUsername || 'Unknown'}`}>
-                          @{memberUsername || 'Unknown'}
-                        </CardTitle>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                            {teamLogo ? (
+                              <img src={teamLogo} alt={team.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-sm font-bold text-primary">{initials}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <CardTitle className="text-base truncate">{team.name}</CardTitle>
+                            {memberUsername && (
+                              <p className="text-xs text-muted-foreground">@{memberUsername}</p>
+                            )}
+                          </div>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         <div className="flex gap-4 text-sm">
