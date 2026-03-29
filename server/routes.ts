@@ -2187,13 +2187,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     // STEP 5: One slot filled — check if an opponent will ever arrive.
-    // If the other prev field is set, a feeder exists but hasn't completed yet → wait.
-    // If it's null, no opponent is ever coming → auto-advance as BYE.
-    const otherPrevId = slot === "team1Id"
-      ? (resolvedNext.prevMatch2Id ?? null)
-      : (resolvedNext.prevMatch1Id ?? null);
-
-    if (otherPrevId) return; // opponent is on the way — wait
+    // CASE 1 — New bracket: both prevMatch fields are populated, use them directly.
+    // CASE 2 — Old bracket: prevMatch fields are null, scan nextMatchId pointers instead.
+    if (resolvedNext.prevMatch1Id && resolvedNext.prevMatch2Id) {
+      // New bracket: check the other feeder's completion status
+      const otherPrevId = slot === "team1Id"
+        ? resolvedNext.prevMatch2Id
+        : resolvedNext.prevMatch1Id;
+      if (otherPrevId) {
+        const otherFeeder = await storage.getMatch(otherPrevId);
+        if (otherFeeder && otherFeeder.status !== "completed") return;
+      }
+    } else {
+      // Old bracket: find all real, incomplete matches whose nextMatchId points here
+      const allMatches = await storage.getMatchesByTournament(tournamentId);
+      const opponentComing = allMatches.some(
+        (m: any) => m.nextMatchId === resolvedNext.id
+          && m.status !== "completed"
+          && (m.team1Id || m.team2Id)
+      );
+      if (opponentComing) return;
+    }
 
     // No feeder for the other slot — auto-advance as BYE and continue up the bracket
     await storage.updateMatch(updated.id, { winnerId, status: "completed", isBye: 1 });
