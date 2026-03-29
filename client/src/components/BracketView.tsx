@@ -307,11 +307,69 @@ function SingleEliminationBracket({
   const finalMatch = matches.find((m) => m.side === "FINAL");
 
   const totalRounds = Math.max(...matches.map((m) => m.round));
-  // Number of R1 matches per side
-  const r1LeftCount = matches.filter((m) => m.side === "LEFT" && m.round === 1).length;
+
+  const byMatchIndex = (a: Match, b: Match) =>
+    (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0);
+  const hasTeam = (m: Match) => !!(m.team1Id || m.team2Id);
+
+  // ── Even distribution for R1 ─────────────────────────────────────────────
+  // Sort: LEFT matches first (by matchIndex), then RIGHT matches (by matchIndex).
+  // Split at ceil(total/2): visual LEFT gets ceil, visual RIGHT gets floor.
+  const r1LeftMatches  = matches.filter((m) => m.side === "LEFT"  && m.round === 1 && hasTeam(m)).sort(byMatchIndex);
+  const r1RightMatches = matches.filter((m) => m.side === "RIGHT" && m.round === 1 && hasTeam(m)).sort(byMatchIndex);
+  const r1All = [...r1LeftMatches, ...r1RightMatches];
+  const r1SplitAt = Math.ceil(r1All.length / 2);
+  const r1VisualLeft  = r1All.slice(0, r1SplitAt);
+  const r1VisualRight = r1All.slice(r1SplitAt);
+
+  // r1MatchCount must be power-of-2 so RoundColumn slot sizes stay correct.
+  function nextPow2(n: number): number {
+    if (n <= 0) return 1;
+    return Math.pow(2, Math.ceil(Math.log2(n)));
+  }
+  const r1MatchCountLeft  = nextPow2(r1VisualLeft.length);
+  const r1MatchCountRight = nextPow2(r1VisualRight.length);
+
+  // ── Ancestry tracking for R2+ ────────────────────────────────────────────
+  // Build visual-side map from R1 assignments, then propagate to later rounds
+  // by tracing each match backwards to its first R1 ancestor.
+  const visualSideMap = new Map<string, "LEFT" | "RIGHT">();
+  r1VisualLeft.forEach((m)  => visualSideMap.set(m.id, "LEFT"));
+  r1VisualRight.forEach((m) => visualSideMap.set(m.id, "RIGHT"));
+
+  // Reverse adjacency: nextMatchId → [feeder matches]
+  const feedersMap = new Map<string, Match[]>();
+  for (const m of matches) {
+    if (m.nextMatchId) {
+      const arr = feedersMap.get(m.nextMatchId) ?? [];
+      arr.push(m);
+      feedersMap.set(m.nextMatchId, arr);
+    }
+  }
+
+  for (const m of matches) {
+    if (m.round <= 1 || m.side === "FINAL" || !hasTeam(m)) continue;
+    const queue = [m.id];
+    const visited = new Set<string>();
+    let found = false;
+    while (queue.length > 0 && !found) {
+      const id = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const feeder of (feedersMap.get(id) ?? [])) {
+        if (feeder.round === 1) {
+          const vs = visualSideMap.get(feeder.id);
+          if (vs) { visualSideMap.set(m.id, vs); found = true; break; }
+        } else {
+          queue.push(feeder.id);
+        }
+      }
+    }
+  }
+
   // 2-team bracket: no preliminary rounds, just the FINAL
-  const isFinalOnly = r1LeftCount === 0;
-  const totalH = isFinalOnly ? SLOT_H * 2 : r1LeftCount * SLOT_H;
+  const isFinalOnly = r1All.length === 0;
+  const totalH = isFinalOnly ? SLOT_H * 2 : r1MatchCountLeft * SLOT_H;
 
   // LEFT rounds: [1, 2, ..., totalRounds-1]
   const leftRounds = Array.from({ length: totalRounds - 1 }, (_, i) => i + 1);
@@ -325,16 +383,13 @@ function SingleEliminationBracket({
     return distance < names.length ? names[distance] : `Round ${round}`;
   }
 
-  // Distribute all matches for a round evenly between visual left and right columns.
-  // LEFT stored matches come first (sorted by matchIndex), then RIGHT stored matches.
-  // Split: visual LEFT gets ceil(total/2), visual RIGHT gets floor(total/2).
-  // Maximum difference between sides is always 1.
   function roundMatchesForVisual(side: "LEFT" | "RIGHT", round: number): Match[] {
-    const byIndex = (a: Match, b: Match) =>
-      (a.matchIndex ?? a.matchPosition ?? 0) - (b.matchIndex ?? b.matchPosition ?? 0);
+    if (round === 1) {
+      return side === "LEFT" ? r1VisualLeft : r1VisualRight;
+    }
     return matches
-      .filter((m) => m.side === side && m.round === round)
-      .sort(byIndex);
+      .filter((m) => m.round === round && hasTeam(m) && visualSideMap.get(m.id) === side)
+      .sort(byMatchIndex);
   }
 
   // 2-team bracket: just show the FINAL
@@ -385,7 +440,7 @@ function SingleEliminationBracket({
           <RoundColumn
             key={`left-${r}`}
             roundMatches={roundMatchesForVisual("LEFT", r)}
-            r1MatchCount={r1LeftCount}
+            r1MatchCount={r1MatchCountLeft}
             round={r}
             connectorSide="right"
             showConnector={true}
@@ -407,7 +462,7 @@ function SingleEliminationBracket({
           <RoundColumn
             key={`right-${r}`}
             roundMatches={roundMatchesForVisual("RIGHT", r)}
-            r1MatchCount={r1LeftCount}
+            r1MatchCount={r1MatchCountRight}
             round={r}
             connectorSide="left"
             showConnector={true}
