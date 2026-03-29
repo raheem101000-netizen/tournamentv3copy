@@ -24,6 +24,7 @@ interface TeamMember {
 
 interface TeamWithMembers extends Team {
   members?: TeamMember[];
+  teamLogoUrl?: string | null;
 }
 
 interface StandingsTableProps {
@@ -143,19 +144,16 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
     return a.id < b.id ? -1 : 1; // stable tiebreaker by team ID
   });
 
-  const getTeamDisplayName = (team: TeamWithMembers): string => {
-    return team.name;
+  const getTeamAvatar = (team: TeamWithMembers): string | null => {
+    return team.teamLogoUrl || (team.members?.[0]?.avatarUrl ?? null);
   };
 
   const getTeamInitials = (team: TeamWithMembers): string => {
     return team.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const getTeamAvatar = (team: TeamWithMembers): string | null => {
-    if (team.members && team.members.length > 0) {
-      return team.members[0].avatarUrl || null;
-    }
-    return null;
+  const getMemberUsername = (team: TeamWithMembers): string | null => {
+    return team.members?.[0]?.username ?? null;
   };
 
   const getRankIcon = (rank: number) => {
@@ -191,17 +189,22 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
+                    <Avatar className="h-8 w-8 flex-shrink-0">
                       {getTeamAvatar(team) && (
-                        <AvatarImage src={getTeamAvatar(team)!} alt={getTeamDisplayName(team)} />
+                        <AvatarImage src={getTeamAvatar(team)!} alt={team.name} />
                       )}
                       <AvatarFallback className="bg-primary/10 text-primary text-xs">
                         {getTeamInitials(team)}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="font-display font-medium" data-testid={`text-team-name-${team.id}`}>
-                      {getTeamDisplayName(team)}
-                    </span>
+                    <div>
+                      <div className="font-display font-medium" data-testid={`text-team-name-${team.id}`}>
+                        {team.name}
+                      </div>
+                      {getMemberUsername(team) && (
+                        <div className="text-xs text-muted-foreground">@{getMemberUsername(team)}</div>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-center font-semibold">
@@ -255,7 +258,7 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
 
               <Avatar className="h-10 w-10 flex-shrink-0">
                 {getTeamAvatar(team) && (
-                  <AvatarImage src={getTeamAvatar(team)!} alt={getTeamDisplayName(team)} />
+                  <AvatarImage src={getTeamAvatar(team)!} alt={team.name} />
                 )}
                 <AvatarFallback className="bg-primary/10 text-primary text-xs">
                   {getTeamInitials(team)}
@@ -264,8 +267,11 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
 
               <div className="flex-1 min-w-0">
                 <div className="font-display font-semibold truncate text-base">
-                  {getTeamDisplayName(team)}
+                  {team.name}
                 </div>
+                {getMemberUsername(team) && (
+                  <div className="text-xs text-muted-foreground">@{getMemberUsername(team)}</div>
+                )}
                 <div className="flex items-center gap-3 text-sm mt-1">
                   <div className="flex items-center gap-1">
                     <span className="text-muted-foreground">MP:</span>

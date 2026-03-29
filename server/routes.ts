@@ -1749,7 +1749,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const teams = await storage.getTeamsByTournament(req.params.tournamentId);
 
-      // Enrich teams with member user info
+      // Load all registrations once for team profile lookup
+      const allRegistrations = await storage.getRegistrationsByTournament(req.params.tournamentId);
+      const userIdToRegistration = new Map(allRegistrations.map(r => [r.userId, r]));
+
+      // Enrich teams with member user info and team profile data
       const enrichedTeams = await Promise.all(
         teams.map(async (team) => {
           const members = await storage.getMembersByTeam(team.id);
@@ -1764,9 +1768,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               };
             })
           );
+
+          // Look up team profile logo via the first member's registration
+          const firstMemberUserId = membersWithUserInfo[0]?.userId;
+          const reg = firstMemberUserId ? userIdToRegistration.get(firstMemberUserId) : undefined;
+          const teamProfile = reg?.teamProfileId ? await storage.getTeamProfile(reg.teamProfileId) : undefined;
+
           return {
             ...team,
             members: membersWithUserInfo,
+            teamLogoUrl: teamProfile?.logoUrl || null,
           };
         })
       );

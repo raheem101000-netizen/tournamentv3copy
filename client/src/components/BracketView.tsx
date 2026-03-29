@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Trophy, Clock, CheckCircle2, MessageSquare } from "lucide-react";
 import MatchCard from "./MatchCard";
 import type { Match, Team } from "@shared/schema";
@@ -15,6 +16,7 @@ interface TeamMember {
 
 interface TeamWithMembers extends Team {
   members?: TeamMember[];
+  teamLogoUrl?: string | null;
 }
 
 interface BracketViewProps {
@@ -26,8 +28,8 @@ interface BracketViewProps {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-/** Height (px) of one R1 slot — card ~60px + 12px gap */
-const SLOT_H = 72;
+/** Height (px) of one R1 slot — card ~80px + 12px gap */
+const SLOT_H = 92;
 /** Fixed width of each round column */
 const COL_W = 140;
 /** Width of connector stub */
@@ -35,10 +37,22 @@ const STUB_W = 10;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function getDisplayName(team?: TeamWithMembers, teamId?: string | null): string {
+function getTeamName(team?: TeamWithMembers, teamId?: string | null): string {
   if (!teamId) return "TBD";
-  if (team?.members && team.members.length > 0) return `@${team.members[0].username}`;
   return team?.name ?? "TBD";
+}
+
+function getUsername(team?: TeamWithMembers): string | null {
+  return team?.members?.[0]?.username ?? null;
+}
+
+function getTeamLogo(team?: TeamWithMembers): string | null {
+  return team?.teamLogoUrl ?? team?.members?.[0]?.avatarUrl ?? null;
+}
+
+function getTeamInitials(team?: TeamWithMembers, teamId?: string | null): string {
+  if (!teamId || !team) return "?";
+  return team.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
 // ── Match Box ────────────────────────────────────────────────────────────────
@@ -66,6 +80,40 @@ function MatchBox({
     );
   }
 
+  function PlayerSlot({ team, teamId, score }: { team?: TeamWithMembers; teamId?: string | null; score?: number | null }) {
+    const won = isWinner(teamId);
+    const logo = getTeamLogo(team);
+    const username = getUsername(team);
+    if (!teamId) {
+      return (
+        <div className="flex items-center gap-1.5 py-0.5 text-[10px] text-muted-foreground/50">
+          <div className="w-5 h-5 rounded-full bg-muted/30 shrink-0" />
+          <span>TBD</span>
+        </div>
+      );
+    }
+    return (
+      <div className={`flex items-center gap-1.5 py-0.5 ${won ? "text-primary" : ""}`}>
+        {won && <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0" />}
+        <Avatar className="w-5 h-5 shrink-0">
+          {logo && <AvatarImage src={logo} alt={team?.name} />}
+          <AvatarFallback className="text-[8px] bg-primary/10">{getTeamInitials(team, teamId)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className={`truncate text-[10px] leading-tight ${won ? "font-bold" : "font-medium"}`}>
+            {getTeamName(team, teamId)}
+            {isCompleted && score !== null && score !== undefined && (
+              <span className="ml-1 font-mono font-bold tabular-nums">{score}</span>
+            )}
+          </div>
+          {username && (
+            <div className="truncate text-[9px] text-muted-foreground leading-tight">@{username}</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       onClick={onClick}
@@ -73,24 +121,9 @@ function MatchBox({
         isCompleted ? "border-border bg-card" : "border-border/70 bg-card/80"
       }`}
     >
-      {/* Players on one line: Team1  vs  Team2 */}
-      <div className="flex items-center gap-1 py-px">
-        <div className={`flex items-center gap-0.5 min-w-0 flex-1 ${isWinner(match.team1Id) ? "font-bold text-primary" : ""}`}>
-          {isWinner(match.team1Id) && <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0" />}
-          {isCompleted && match.team1Score !== null && (
-            <span className="font-mono font-bold tabular-nums shrink-0">{match.team1Score}</span>
-          )}
-          <span className="truncate">{getDisplayName(team1, match.team1Id)}</span>
-        </div>
-        <span className="text-[9px] text-muted-foreground/60 shrink-0 px-0.5">vs</span>
-        <div className={`flex items-center gap-0.5 min-w-0 flex-1 justify-end ${isWinner(match.team2Id) ? "font-bold text-primary" : ""}`}>
-          <span className="truncate text-right">{getDisplayName(team2, match.team2Id)}</span>
-          {isCompleted && match.team2Score !== null && (
-            <span className="font-mono font-bold tabular-nums shrink-0">{match.team2Score}</span>
-          )}
-          {isWinner(match.team2Id) && <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0" />}
-        </div>
-      </div>
+      <PlayerSlot team={team1} teamId={match.team1Id} score={match.team1Score} />
+      <div className="border-t border-border/30 my-0.5" />
+      <PlayerSlot team={team2} teamId={match.team2Id} score={match.team2Score} />
 
       {/* Status */}
       <div className="mt-1 flex items-center gap-0.5">
