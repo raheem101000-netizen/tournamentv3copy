@@ -26,14 +26,45 @@ interface BracketViewProps {
   onMatchClick?: (matchId: string) => void;
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Scale ─────────────────────────────────────────────────────────────────────
 
-/** Height (px) of one R1 slot — card ~68px + 12px gap */
-const SLOT_H = 80;
-/** Fixed width of each round column */
-const COL_W = 140;
-/** Width of connector stub */
-const STUB_W = 10;
+interface BracketScale {
+  slotH: number;
+  colW: number;
+  stubW: number;
+  cardHalfH: number;
+  avatarCls: string;
+  nameCls: string;
+  userCls: string;
+  fallbackCls: string;
+  truncate: boolean;
+  cardPad: string;
+}
+
+function getBracketScale(totalMatches: number): BracketScale {
+  if (totalMatches <= 4) {
+    // 2–4 team bracket: large, fully readable
+    return { slotH: 100, colW: 220, stubW: 14, cardHalfH: 42,
+      avatarCls: "w-7 h-7", nameCls: "text-xs", userCls: "text-[11px]",
+      fallbackCls: "text-[10px]", truncate: false, cardPad: "px-3 py-2" };
+  }
+  if (totalMatches <= 10) {
+    // ~8-team bracket (7 matches): medium-large
+    return { slotH: 90, colW: 190, stubW: 12, cardHalfH: 38,
+      avatarCls: "w-6 h-6", nameCls: "text-[11px]", userCls: "text-[10px]",
+      fallbackCls: "text-[9px]", truncate: false, cardPad: "px-2.5 py-1.5" };
+  }
+  if (totalMatches <= 20) {
+    // ~16-team bracket (15 matches): medium
+    return { slotH: 82, colW: 165, stubW: 10, cardHalfH: 34,
+      avatarCls: "w-5 h-5", nameCls: "text-[10px]", userCls: "text-[9px]",
+      fallbackCls: "text-[8px]", truncate: true, cardPad: "px-2 py-1.5" };
+  }
+  // 32+ matches: compact
+  return { slotH: 72, colW: 140, stubW: 10, cardHalfH: 30,
+    avatarCls: "w-4 h-4", nameCls: "text-[9px]", userCls: "text-[8px]",
+    fallbackCls: "text-[7px]", truncate: true, cardPad: "px-1.5 py-1" };
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,11 +93,13 @@ function MatchBox({
   team1,
   team2,
   onClick,
+  scale,
 }: {
   match: Match;
   team1?: TeamWithMembers;
   team2?: TeamWithMembers;
   onClick?: () => void;
+  scale: BracketScale;
 }) {
   const isCompleted = match.status === "completed";
   const isWinner = (id?: string | null) => !!match.winnerId && match.winnerId === id;
@@ -95,19 +128,19 @@ function MatchBox({
     return (
       <div className={`flex items-center gap-1.5 py-0.5 ${won ? "text-primary" : ""}`}>
         {won && <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0" />}
-        <Avatar className="w-5 h-5 shrink-0">
+        <Avatar className={`${scale.avatarCls} shrink-0`}>
           {logo && <AvatarImage src={logo} alt={team?.name} />}
-          <AvatarFallback className="text-[8px] bg-primary/10">{getTeamInitials(team, teamId)}</AvatarFallback>
+          <AvatarFallback className={`${scale.fallbackCls} bg-primary/10`}>{getTeamInitials(team, teamId)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <div className={`truncate text-[10px] leading-tight ${won ? "font-bold" : "font-medium"}`}>
+          <div className={`${scale.truncate ? "truncate" : ""} ${scale.nameCls} leading-tight ${won ? "font-bold" : "font-medium"}`}>
             {getTeamName(team, teamId)}
             {isCompleted && score !== null && score !== undefined && (
               <span className="ml-1 font-mono font-bold tabular-nums">{score}</span>
             )}
           </div>
           {username && (
-            <div className="truncate text-[9px] text-muted-foreground leading-tight">@{username}</div>
+            <div className={`${scale.truncate ? "truncate" : ""} ${scale.userCls} text-muted-foreground leading-tight`}>@{username}</div>
           )}
         </div>
       </div>
@@ -117,7 +150,7 @@ function MatchBox({
   return (
     <div
       onClick={onClick}
-      className={`cursor-pointer select-none rounded-md border px-2 py-1.5 text-xs transition-colors hover:bg-accent/50 ${
+      className={`cursor-pointer select-none rounded-md border ${scale.cardPad} text-xs transition-colors hover:bg-accent/50 ${
         isCompleted ? "border-border bg-card" : "border-border/70 bg-card/80"
       }`}
     >
@@ -169,6 +202,7 @@ function RoundColumn({
   showConnector,
   getTeam,
   onMatchClick,
+  scale,
 }: {
   roundMatches: Match[];
   r1MatchCount: number;
@@ -177,29 +211,30 @@ function RoundColumn({
   showConnector: boolean;
   getTeam: (id: string | null | undefined) => TeamWithMembers | undefined;
   onMatchClick?: (id: string) => void;
+  scale: BracketScale;
 }) {
-  // Slot height doubles each round: R1=SLOT_H, R2=2*SLOT_H, R3=4*SLOT_H…
-  const slotH = SLOT_H * Math.pow(2, round - 1);
+  // Slot height doubles each round: R1=slotH, R2=2*slotH, R3=4*slotH…
+  const slotH = scale.slotH * Math.pow(2, round - 1);
   const matchCount = r1MatchCount / Math.pow(2, round - 1);
-  const totalH = r1MatchCount * SLOT_H;
+  const totalH = r1MatchCount * scale.slotH;
   // Only draw vertical bar connector when there are multiple matches to pair up
   const showVerticalBar = matchCount > 1;
 
   return (
     <div
       className="relative shrink-0 flex flex-col"
-      style={{ width: COL_W + (showConnector ? STUB_W : 0), height: totalH }}
+      style={{ width: scale.colW + (showConnector ? scale.stubW : 0), height: totalH }}
     >
       {Array.from({ length: matchCount }, (_, i) => {
         const match = roundMatches[i];
         const slotTop = i * slotH;
         // Center the card vertically within its slot
-        const cardTop = slotTop + slotH / 2 - 30; // 30 = approx half card height
+        const cardTop = slotTop + slotH / 2 - scale.cardHalfH;
         const isUpperOfPair = i % 2 === 0;
         const edgeProp = connectorSide === "right" ? "right" : "left";
 
         return (
-          <div key={i} className="absolute" style={{ top: cardTop, left: connectorSide === "right" ? 0 : STUB_W, width: COL_W }}>
+          <div key={i} className="absolute" style={{ top: cardTop, left: connectorSide === "right" ? 0 : scale.stubW, width: scale.colW }}>
             {match ? (
               <MatchBox
                 match={match}
@@ -210,6 +245,7 @@ function RoundColumn({
                     ? () => onMatchClick(match.id)
                     : undefined
                 }
+                scale={scale}
               />
             ) : (
               <div className="rounded-lg border border-dashed border-border/20 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/30 text-center">
@@ -225,8 +261,8 @@ function RoundColumn({
                   className="absolute bg-border/60"
                   style={{
                     top: "50%",
-                    [edgeProp]: -STUB_W,
-                    width: STUB_W,
+                    [edgeProp]: -scale.stubW,
+                    width: scale.stubW,
                     height: 1,
                     transform: "translateY(-0.5px)",
                   }}
@@ -238,7 +274,7 @@ function RoundColumn({
                       className="absolute bg-border/60"
                       style={{
                         top: "50%",
-                        [edgeProp]: -STUB_W,
+                        [edgeProp]: -scale.stubW,
                         width: 1,
                         height: slotH,
                       }}
@@ -248,7 +284,7 @@ function RoundColumn({
                       className="absolute bg-border/60"
                       style={{
                         bottom: "50%",
-                        [edgeProp]: -STUB_W,
+                        [edgeProp]: -scale.stubW,
                         width: 1,
                         height: slotH,
                       }}
@@ -270,26 +306,28 @@ function FinalColumn({
   totalH,
   getTeam,
   onMatchClick,
+  scale,
 }: {
   match: Match | undefined;
   totalH: number;
   getTeam: (id: string | null | undefined) => TeamWithMembers | undefined;
   onMatchClick?: (id: string) => void;
+  scale: BracketScale;
 }) {
-  const cardTop = totalH / 2 - 30;
+  const cardTop = totalH / 2 - scale.cardHalfH;
   return (
-    <div className="relative shrink-0" style={{ width: COL_W + STUB_W * 2, height: totalH }}>
+    <div className="relative shrink-0" style={{ width: scale.colW + scale.stubW * 2, height: totalH }}>
       {/* Left stub (from LEFT side) */}
       <div
         className="absolute bg-border/60"
-        style={{ top: totalH / 2 - 0.5, left: 0, width: STUB_W, height: 1 }}
+        style={{ top: totalH / 2 - 0.5, left: 0, width: scale.stubW, height: 1 }}
       />
       {/* Right stub (from RIGHT side) */}
       <div
         className="absolute bg-border/60"
-        style={{ top: totalH / 2 - 0.5, right: 0, width: STUB_W, height: 1 }}
+        style={{ top: totalH / 2 - 0.5, right: 0, width: scale.stubW, height: 1 }}
       />
-      <div className="absolute" style={{ top: cardTop, left: STUB_W, width: COL_W }}>
+      <div className="absolute" style={{ top: cardTop, left: scale.stubW, width: scale.colW }}>
         {match ? (
           <MatchBox
             match={match}
@@ -300,6 +338,7 @@ function FinalColumn({
                 ? () => onMatchClick(match.id)
                 : undefined
             }
+            scale={scale}
           />
         ) : (
           <div className="rounded-lg border border-dashed border-border/20 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/30 text-center">
@@ -322,6 +361,8 @@ function SingleEliminationBracket({
 }) {
   if (matches.length === 0) return null;
 
+  const scale = getBracketScale(matches.length);
+
   const getTeam = (id: string | null | undefined) =>
     teams.find((t) => t.id === id) as TeamWithMembers | undefined;
 
@@ -330,7 +371,7 @@ function SingleEliminationBracket({
 
   if (!hasSides) {
     // Legacy bracket: render old single-column layout
-    return <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} />;
+    return <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} scale={scale} />;
   }
 
   const finalMatch = matches.find((m) => m.side === "FINAL");
@@ -398,7 +439,7 @@ function SingleEliminationBracket({
 
   // 2-team bracket: no preliminary rounds, just the FINAL
   const isFinalOnly = r1All.length === 0;
-  const totalH = isFinalOnly ? SLOT_H * 2 : r1MatchCountLeft * SLOT_H;
+  const totalH = isFinalOnly ? scale.slotH * 2 : r1MatchCountLeft * scale.slotH;
 
   // LEFT rounds: [1, 2, ..., totalRounds-1]
   const leftRounds = Array.from({ length: totalRounds - 1 }, (_, i) => i + 1);
@@ -425,7 +466,7 @@ function SingleEliminationBracket({
   if (isFinalOnly) {
     return (
       <div className="w-full flex justify-center py-4">
-        <div style={{ width: COL_W }}>
+        <div style={{ width: scale.colW }}>
           <p className="text-xs font-semibold text-amber-500 text-center mb-2">Grand Final</p>
           {finalMatch ? (
             <MatchBox
@@ -433,6 +474,7 @@ function SingleEliminationBracket({
               team1={getTeam(finalMatch.team1Id)}
               team2={getTeam(finalMatch.team2Id)}
               onClick={onMatchClick && finalMatch.team1Id && finalMatch.team2Id ? () => onMatchClick(finalMatch.id) : undefined}
+              scale={scale}
             />
           ) : (
             <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">TBD</div>
@@ -448,15 +490,15 @@ function SingleEliminationBracket({
       {/* Round name headers */}
       <div className="flex mb-1 min-w-max">
         {leftRounds.map((r) => (
-          <div key={`lh-${r}`} style={{ width: COL_W + STUB_W }} className="px-2 pb-1">
+          <div key={`lh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1">
             <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
           </div>
         ))}
-        <div style={{ width: COL_W + STUB_W * 2 }} className="px-2 pb-1 text-center">
+        <div style={{ width: scale.colW + scale.stubW * 2 }} className="px-2 pb-1 text-center">
           <p className="text-xs font-semibold text-amber-500">Grand Final</p>
         </div>
         {rightRoundsDisplay.map((r) => (
-          <div key={`rh-${r}`} style={{ width: COL_W + STUB_W }} className="px-2 pb-1 text-right">
+          <div key={`rh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1 text-right">
             <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
           </div>
         ))}
@@ -475,6 +517,7 @@ function SingleEliminationBracket({
             showConnector={true}
             getTeam={getTeam}
             onMatchClick={onMatchClick}
+            scale={scale}
           />
         ))}
 
@@ -484,6 +527,7 @@ function SingleEliminationBracket({
           totalH={totalH}
           getTeam={getTeam}
           onMatchClick={onMatchClick}
+          scale={scale}
         />
 
         {/* RIGHT side columns: R(n-1) → R1, progressing left toward center (mirrored) */}
@@ -497,6 +541,7 @@ function SingleEliminationBracket({
             showConnector={true}
             getTeam={getTeam}
             onMatchClick={onMatchClick}
+            scale={scale}
           />
         ))}
       </div>
@@ -510,10 +555,12 @@ function LegacyBracket({
   matches,
   teams,
   onMatchClick,
+  scale,
 }: {
   matches: Match[];
   teams: TeamWithMembers[];
   onMatchClick?: (id: string) => void;
+  scale: BracketScale;
 }) {
   const getTeam = (id: string | null | undefined) =>
     teams.find((t) => t.id === id) as TeamWithMembers | undefined;
@@ -528,10 +575,10 @@ function LegacyBracket({
           const isLastRound = round === totalRounds;
           const r1Count = matches.filter((m) => m.round === 1).length;
           const slotsInRound = Math.ceil(r1Count / Math.pow(2, round - 1));
-          const slotHeightPx = SLOT_H;
+          const slotHeightPx = scale.slotH;
 
           return (
-            <div key={round} className="flex flex-col shrink-0" style={{ width: 240 }}>
+            <div key={round} className="flex flex-col shrink-0" style={{ width: scale.colW + 60 }}>
               <div className="px-3 pb-3 pt-1 border-b mb-0">
                 <h3 className="font-semibold text-sm">Round {round}</h3>
                 <p className="text-xs text-muted-foreground">
@@ -559,6 +606,7 @@ function LegacyBracket({
                             team1={getTeam(match.team1Id)}
                             team2={getTeam(match.team2Id)}
                             onClick={onMatchClick && match.team1Id && match.team2Id ? () => onMatchClick(match.id) : undefined}
+                            scale={scale}
                           />
                         ) : (
                           <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">
