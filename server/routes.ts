@@ -2146,9 +2146,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
     // STEP 1: Get the completed match and find the next bracket slot via nextMatchId
     const match = await storage.getMatch(matchId);
-    if (!match?.nextMatchId) return;
+    if (!match) return;
 
-    const nextMatch = await storage.getMatch(match.nextMatchId);
+    const nextMatch = match.nextMatchId
+      ? await storage.getMatch(match.nextMatchId)
+      : await storage.getMatchByPrevMatchId(matchId);
     if (!nextMatch) return;
 
     // STEP 2: Determine slot using the connected bracket's prev fields.
