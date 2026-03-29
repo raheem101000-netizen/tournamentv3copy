@@ -45,24 +45,24 @@ function getBracketScale(totalMatches: number): BracketScale {
   if (totalMatches <= 4) {
     // 2–4 team bracket: large, fully readable
     return { slotH: 110, colW: 280, stubW: 14, cardHalfH: 46,
-      avatarCls: "w-7 h-7", nameCls: "text-xs", userCls: "text-[11px]",
+      avatarCls: "w-9 h-9", nameCls: "text-xs", userCls: "text-[11px]",
       fallbackCls: "text-[10px]", truncate: false, cardPad: "px-4 py-2" };
   }
   if (totalMatches <= 10) {
     // ~8-team bracket (7 matches): medium-large
     return { slotH: 100, colW: 250, stubW: 12, cardHalfH: 42,
-      avatarCls: "w-6 h-6", nameCls: "text-[11px]", userCls: "text-[10px]",
+      avatarCls: "w-8 h-8", nameCls: "text-[11px]", userCls: "text-[10px]",
       fallbackCls: "text-[9px]", truncate: false, cardPad: "px-3 py-1.5" };
   }
   if (totalMatches <= 20) {
     // ~16-team bracket (15 matches): medium
     return { slotH: 90, colW: 210, stubW: 10, cardHalfH: 38,
-      avatarCls: "w-5 h-5", nameCls: "text-[10px]", userCls: "text-[9px]",
+      avatarCls: "w-7 h-7", nameCls: "text-[10px]", userCls: "text-[9px]",
       fallbackCls: "text-[8px]", truncate: true, cardPad: "px-3 py-1.5" };
   }
   // 32+ matches: compact
   return { slotH: 80, colW: 180, stubW: 10, cardHalfH: 34,
-    avatarCls: "w-4 h-4", nameCls: "text-[9px]", userCls: "text-[8px]",
+    avatarCls: "w-6 h-6", nameCls: "text-[9px]", userCls: "text-[8px]",
     fallbackCls: "text-[7px]", truncate: true, cardPad: "px-2.5 py-1" };
 }
 
