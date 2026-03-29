@@ -112,6 +112,7 @@ export interface IStorage {
   createTeam(data: InsertTeam): Promise<Team>;
   getTeam(id: string): Promise<Team | undefined>;
   getTeamsByTournament(tournamentId: string): Promise<Team[]>;
+  getTeamByUserInTournament(userId: string, tournamentId: string): Promise<Team | undefined>;
   updateTeam(id: string, data: Partial<Team>): Promise<Team | undefined>;
 
   // Match operations
@@ -384,6 +385,15 @@ export class DatabaseStorage implements IStorage {
 
   async getTeamsByTournament(tournamentId: string): Promise<Team[]> {
     return await db.select().from(teams).where(eq(teams.tournamentId, tournamentId));
+  }
+
+  async getTeamByUserInTournament(userId: string, tournamentId: string): Promise<Team | undefined> {
+    const [result] = await db
+      .select({ team: teams })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .where(and(eq(teamMembers.userId, userId), eq(teams.tournamentId, tournamentId)));
+    return result?.team;
   }
 
   async updateTeam(id: string, data: Partial<Team>): Promise<Team | undefined> {

@@ -508,6 +508,32 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     }
   });
 
+  const removeRegistrationMutation = useMutation({
+    mutationFn: async (registrationId: string) => {
+      return apiRequest('PATCH', `/api/registrations/${registrationId}/remove`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/registrations`] });
+      toast({ title: "Registration Removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const restoreRegistrationMutation = useMutation({
+    mutationFn: async (registrationId: string) => {
+      return apiRequest('PATCH', `/api/registrations/${registrationId}/restore`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/registrations`] });
+      toast({ title: "Registration Restored" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
   const eliminateTeamMutation = useMutation({
     mutationFn: async (teamId: string) => {
       return apiRequest('PATCH', `/api/teams/${teamId}/eliminate`, {});
@@ -1282,13 +1308,41 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                                 </p>
                               </div>
                             </div>
-                            <Badge variant={
-                              reg.status === 'approved' ? 'default' :
-                                reg.status === 'submitted' ? 'secondary' :
-                                  'outline'
-                            }>
-                              {reg.status.charAt(0).toUpperCase() + reg.status.slice(1)}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={
+                                reg.status === 'approved' ? 'default' :
+                                  reg.status === 'submitted' ? 'secondary' :
+                                    'outline'
+                              }>
+                                {reg.status.charAt(0).toUpperCase() + reg.status.slice(1)}
+                              </Badge>
+                              {isOrganizer && reg.status === 'approved' && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeRegistrationMutation.mutate(reg.id);
+                                  }}
+                                  disabled={removeRegistrationMutation.isPending}
+                                >
+                                  Remove
+                                </Button>
+                              )}
+                              {isOrganizer && reg.status === 'removed' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    restoreRegistrationMutation.mutate(reg.id);
+                                  }}
+                                  disabled={restoreRegistrationMutation.isPending}
+                                >
+                                  Restore
+                                </Button>
+                              )}
+                            </div>
                           </CardHeader>
 
                           {/* Expandable Q&A section */}

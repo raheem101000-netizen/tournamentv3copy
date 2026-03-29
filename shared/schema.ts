@@ -131,7 +131,7 @@ export const registrations = pgTable("registrations", {
   userId: varchar("user_id").notNull(),
   teamName: text("team_name").notNull(),
   contactEmail: text("contact_email"),
-  status: text("status", { enum: ["draft", "submitted", "approved", "rejected"] }).notNull().default("draft"),
+  status: text("status", { enum: ["draft", "submitted", "approved", "rejected", "removed"] }).notNull().default("draft"),
   paymentStatus: text("payment_status", { enum: ["pending", "submitted", "verified", "rejected"] }).default("pending"),
   paymentProofUrl: text("payment_proof_url"),
   paymentTransactionId: text("payment_transaction_id"),

@@ -3675,6 +3675,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/registrations/:id/remove", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const registration = await storage.getRegistration(req.params.id);
+      if (!registration) {
+        return res.status(404).json({ error: "Registration not found" });
+      }
+
+      const tournament = await storage.getTournament(registration.tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ error: "Tournament not found" });
+      }
+
+      // Only Owner (server owner) or Tournament Manager can remove registrations
+      let canManage = tournament.organizerId === req.session.userId;
+      if (!canManage && tournament.serverId) {
+        const server = await storage.getServer(tournament.serverId);
+        if (server?.ownerId === req.session.userId) canManage = true;
+        if (!canManage) {
+          const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId!);
+          if (perms.includes("manage_tournaments")) canManage = true;
+        }
+      }
+      if (!canManage) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await storage.updateRegistration(registration.id, { status: "removed" });
+
+      const team = await storage.getTeamByUserInTournament(registration.userId, registration.tournamentId);
+      if (team) {
+        await storage.updateTeam(team.id, { isRemoved: 1 });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/registrations/:id/restore", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const registration = await storage.getRegistration(req.params.id);
+      if (!registration) {
+        return res.status(404).json({ error: "Registration not found" });
+      }
+
+      const tournament = await storage.getTournament(registration.tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ error: "Tournament not found" });
+      }
+
+      let canManage2 = tournament.organizerId === req.session.userId;
+      if (!canManage2 && tournament.serverId) {
+        const server = await storage.getServer(tournament.serverId);
+        if (server?.ownerId === req.session.userId) canManage2 = true;
+        if (!canManage2) {
+          const perms = await storage.getEffectivePermissions(tournament.serverId, req.session.userId!);
+          if (perms.includes("manage_tournaments")) canManage2 = true;
+        }
+      }
+      if (!canManage2) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await storage.updateRegistration(registration.id, { status: "approved" });
+
+      const team = await storage.getTeamByUserInTournament(registration.userId, registration.tournamentId);
+      if (team) {
+        await storage.updateTeam(team.id, { isRemoved: 0 });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      logError(error, { endpoint: req?.method + " " + req?.path, userId: req?.session?.userId });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get all channels (for public discovery or user's channels)
   app.get("/api/channels", async (req, res) => {
     try {
