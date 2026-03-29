@@ -143,19 +143,11 @@ export default function StandingsTable({ teams, isEditable = false, tournamentId
     return a.id < b.id ? -1 : 1; // stable tiebreaker by team ID
   });
 
-  // Get display name from team members (first member's username with @ prefix)
   const getTeamDisplayName = (team: TeamWithMembers): string => {
-    if (team.members && team.members.length > 0) {
-      return `@${team.members[0].username}`;
-    }
     return team.name;
   };
 
   const getTeamInitials = (team: TeamWithMembers): string => {
-    if (team.members && team.members.length > 0) {
-      const username = team.members[0].username;
-      return username.slice(0, 2).toUpperCase();
-    }
     return team.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   };
 
