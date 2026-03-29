@@ -6,27 +6,27 @@ import { Trophy, Clock, CheckCircle2 } from "lucide-react";
 import MatchCard from "./MatchCard";
 import type { Match, Team } from "@shared/schema";
 
-/** Scales a bracket container to fit its parent width without scrolling. */
+/**
+ * Scales a bracket container to fit its parent width without scrolling.
+ * Uses CSS zoom (affects layout) rather than transform:scale (doesn't affect layout).
+ */
 function useFitScale(deps: any[]) {
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [scaledHeight, setScaledHeight] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     function compute() {
       const outer = outerRef.current;
       const inner = innerRef.current;
       if (!outer || !inner) return;
-      // Temporarily remove transform to measure natural dimensions
-      inner.style.transform = "none";
+      // Reset zoom to 1 to measure natural (unzoomed) dimensions
+      inner.style.zoom = "1";
       const nw = inner.scrollWidth;
-      const nh = inner.scrollHeight;
-      inner.style.transform = "";
+      inner.style.zoom = ""; // remove override; React's style prop re-applies on next render
       const aw = outer.clientWidth;
-      const s = nw > aw && aw > 0 ? aw / nw : 1;
+      const s = nw > 0 && aw > 0 ? Math.min(1, aw / nw) : 1;
       setScale(s);
-      setScaledHeight(nh * s);
     }
     compute();
     const ro = new ResizeObserver(compute);
@@ -35,7 +35,7 @@ function useFitScale(deps: any[]) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  return { outerRef, innerRef, scale, scaledHeight };
+  return { outerRef, innerRef, scale };
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -390,7 +390,7 @@ function SingleEliminationBracket({
   onMatchClick?: (id: string) => void;
 }) {
   const scale = getBracketScale(matches.length);
-  const { outerRef, innerRef, scale: fitScale, scaledHeight } = useFitScale([matches.length]);
+  const { outerRef, innerRef, scale: fitScale } = useFitScale([matches.length]);
 
   if (matches.length === 0) return null;
 
@@ -403,8 +403,8 @@ function SingleEliminationBracket({
   if (!hasSides) {
     // Legacy bracket: render old single-column layout
     return (
-      <div ref={outerRef} className="w-full overflow-hidden" style={{ height: scaledHeight }}>
-        <div ref={innerRef} className="w-fit" style={{ transform: fitScale < 1 ? `scale(${fitScale})` : undefined, transformOrigin: "top left" }}>
+      <div ref={outerRef} className="w-full overflow-x-hidden">
+        <div ref={innerRef} className="w-fit" style={{ zoom: fitScale < 1 ? fitScale : undefined }}>
           <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} scale={scale} />
         </div>
       </div>
@@ -502,8 +502,7 @@ function SingleEliminationBracket({
   // 2-team bracket: just show the FINAL
   if (isFinalOnly) {
     return (
-      <div ref={outerRef} className="w-full overflow-hidden" style={{ height: scaledHeight }}>
-        <div ref={innerRef} className="w-fit mx-auto py-4" style={{ transform: fitScale < 1 ? `scale(${fitScale})` : undefined, transformOrigin: "top left" }}>
+      <div className="w-full flex justify-center py-4 overflow-x-hidden">
         <div style={{ width: scale.colW }}>
           <p className="text-xs font-semibold text-amber-500 text-center mb-2">Grand Final</p>
           {finalMatch ? (
@@ -518,78 +517,138 @@ function SingleEliminationBracket({
             <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">TBD</div>
           )}
         </div>
-        </div>
       </div>
     );
   }
 
   return (
-    <div ref={outerRef} className="w-full overflow-hidden pb-2" style={{ height: scaledHeight }}>
-      <div
-        ref={innerRef}
-        className="w-fit mx-auto"
-        style={{ transform: fitScale < 1 ? `scale(${fitScale})` : undefined, transformOrigin: "top left" }}
-      >
-      {/* Round name headers */}
-      <div className="flex mb-1 min-w-max">
-        {leftRounds.map((r) => (
-          <div key={`lh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1">
-            <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
-          </div>
-        ))}
-        <div style={{ width: scale.colW + scale.stubW * 2 }} className="px-2 pb-1 text-center">
-          <p className="text-xs font-semibold text-amber-500">Grand Final</p>
+    <>
+      {/* ── Mobile: single-column vertical layout (< 768px) ── */}
+      <div className="md:hidden space-y-4 pb-6 overflow-x-hidden">
+        {leftRounds.map((r) => {
+          const ms = roundMatchesForVisual("LEFT", r);
+          if (ms.length === 0) return null;
+          return (
+            <div key={`ml-${r}`}>
+              <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">{roundLabel(r)} – Left</p>
+              <div className="space-y-2">
+                {ms.map((m) => (
+                  <MatchBox
+                    key={m.id}
+                    match={m}
+                    team1={getTeam(m.team1Id)}
+                    team2={getTeam(m.team2Id)}
+                    onClick={onMatchClick && m.team1Id && m.team2Id ? () => onMatchClick!(m.id) : undefined}
+                    scale={scale}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Grand Final */}
+        <div>
+          <p className="text-xs font-semibold text-amber-500 mb-2 px-1">Grand Final</p>
+          {finalMatch ? (
+            <MatchBox
+              match={finalMatch}
+              team1={getTeam(finalMatch.team1Id)}
+              team2={getTeam(finalMatch.team2Id)}
+              onClick={onMatchClick && finalMatch.team1Id && finalMatch.team2Id ? () => onMatchClick!(finalMatch.id) : undefined}
+              scale={scale}
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">TBD</div>
+          )}
         </div>
-        {rightRoundsDisplay.map((r) => (
-          <div key={`rh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1 text-right">
-            <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
+
+        {rightRoundsDisplay.map((r) => {
+          const ms = roundMatchesForVisual("RIGHT", r);
+          if (ms.length === 0) return null;
+          return (
+            <div key={`mr-${r}`}>
+              <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">{roundLabel(r)} – Right</p>
+              <div className="space-y-2">
+                {ms.map((m) => (
+                  <MatchBox
+                    key={m.id}
+                    match={m}
+                    team1={getTeam(m.team1Id)}
+                    team2={getTeam(m.team2Id)}
+                    onClick={onMatchClick && m.team1Id && m.team2Id ? () => onMatchClick!(m.id) : undefined}
+                    scale={scale}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop: butterfly bracket with zoom-to-fit (≥ 768px) ── */}
+      <div ref={outerRef} className="hidden md:block w-full overflow-x-hidden pb-2">
+        <div
+          ref={innerRef}
+          className="w-fit mx-auto"
+          style={{ zoom: fitScale < 1 ? fitScale : undefined }}
+        >
+          {/* Round name headers */}
+          <div className="flex mb-1 min-w-max">
+            {leftRounds.map((r) => (
+              <div key={`lh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1">
+                <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
+              </div>
+            ))}
+            <div style={{ width: scale.colW + scale.stubW * 2 }} className="px-2 pb-1 text-center">
+              <p className="text-xs font-semibold text-amber-500">Grand Final</p>
+            </div>
+            {rightRoundsDisplay.map((r) => (
+              <div key={`rh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1 text-right">
+                <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Bracket body */}
-      <div className="flex min-w-max items-start">
-        {/* LEFT side columns: R1 → R(n-1), progressing right toward center */}
-        {leftRounds.map((r) => (
-          <RoundColumn
-            key={`left-${r}`}
-            roundMatches={roundMatchesForVisual("LEFT", r)}
-            r1MatchCount={r1MatchCountLeft}
-            round={r}
-            connectorSide="right"
-            showConnector={true}
-            getTeam={getTeam}
-            onMatchClick={onMatchClick}
-            scale={scale}
-          />
-        ))}
-
-        {/* FINAL */}
-        <FinalColumn
-          match={finalMatch}
-          totalH={totalH}
-          getTeam={getTeam}
-          onMatchClick={onMatchClick}
-          scale={scale}
-        />
-
-        {/* RIGHT side columns: R(n-1) → R1, progressing left toward center (mirrored) */}
-        {rightRoundsDisplay.map((r) => (
-          <RoundColumn
-            key={`right-${r}`}
-            roundMatches={roundMatchesForVisual("RIGHT", r)}
-            r1MatchCount={r1MatchCountRight}
-            round={r}
-            connectorSide="left"
-            showConnector={true}
-            getTeam={getTeam}
-            onMatchClick={onMatchClick}
-            scale={scale}
-          />
-        ))}
+          {/* Bracket body */}
+          <div className="flex min-w-max items-start">
+            {leftRounds.map((r) => (
+              <RoundColumn
+                key={`left-${r}`}
+                roundMatches={roundMatchesForVisual("LEFT", r)}
+                r1MatchCount={r1MatchCountLeft}
+                round={r}
+                connectorSide="right"
+                showConnector={true}
+                getTeam={getTeam}
+                onMatchClick={onMatchClick}
+                scale={scale}
+              />
+            ))}
+            <FinalColumn
+              match={finalMatch}
+              totalH={totalH}
+              getTeam={getTeam}
+              onMatchClick={onMatchClick}
+              scale={scale}
+            />
+            {rightRoundsDisplay.map((r) => (
+              <RoundColumn
+                key={`right-${r}`}
+                roundMatches={roundMatchesForVisual("RIGHT", r)}
+                r1MatchCount={r1MatchCountRight}
+                round={r}
+                connectorSide="left"
+                showConnector={true}
+                getTeam={getTeam}
+                onMatchClick={onMatchClick}
+                scale={scale}
+              />
+            ))}
+          </div>
+        </div>
       </div>
-      </div>
-    </div>
+    </>
   );
 }
 
