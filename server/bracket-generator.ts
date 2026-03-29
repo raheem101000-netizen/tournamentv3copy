@@ -77,7 +77,9 @@ export function generateSingleEliminationBracket(
     side: string,
     team1: Team | null,
     team2: Team | null,
-    nextMatchId: string | null
+    nextMatchId: string | null,
+    sourceMatch1Id: string | null = null,
+    sourceMatch2Id: string | null = null,
   ): BracketMatch {
     const hasBye = (!!team1 && !team2) || (!team1 && !!team2);
     const winner = hasBye ? (team1 ?? team2) : null;
@@ -89,6 +91,8 @@ export function generateSingleEliminationBracket(
       matchPosition: matchIndex,
       side,
       nextMatchId,
+      sourceMatch1Id,
+      sourceMatch2Id,
       team1Id: team1?.id ?? null,
       team2Id: team2?.id ?? null,
       winnerId: winner?.id ?? null,
@@ -121,7 +125,11 @@ export function generateSingleEliminationBracket(
         nextMatchId = finalId;
       }
 
-      result.push(makeMatch(idMap.LEFT[r][i], r, i, "LEFT", team1, team2, nextMatchId));
+      // Sources: the two R-1 matches whose winners feed into this slot.
+      // R1 matches have no predecessors (sources are null).
+      const src1 = r > 1 ? (idMap.LEFT[r - 1]?.[i * 2] ?? null) : null;
+      const src2 = r > 1 ? (idMap.LEFT[r - 1]?.[i * 2 + 1] ?? null) : null;
+      result.push(makeMatch(idMap.LEFT[r][i], r, i, "LEFT", team1, team2, nextMatchId, src1, src2));
     }
   }
 
@@ -145,7 +153,9 @@ export function generateSingleEliminationBracket(
         nextMatchId = finalId;
       }
 
-      result.push(makeMatch(idMap.RIGHT[r][i], r, i, "RIGHT", team1, team2, nextMatchId));
+      const src1 = r > 1 ? (idMap.RIGHT[r - 1]?.[i * 2] ?? null) : null;
+      const src2 = r > 1 ? (idMap.RIGHT[r - 1]?.[i * 2 + 1] ?? null) : null;
+      result.push(makeMatch(idMap.RIGHT[r][i], r, i, "RIGHT", team1, team2, nextMatchId, src1, src2));
     }
   }
 
@@ -154,6 +164,9 @@ export function generateSingleEliminationBracket(
   // so the two teams play directly in the FINAL.
   const finalTeam1 = totalRounds === 1 ? (teams[0] ?? null) : null;
   const finalTeam2 = totalRounds === 1 ? (teams[1] ?? null) : null;
+  // FINAL sources: the one LEFT semifinal and the one RIGHT semifinal
+  const finalSrc1 = totalRounds > 1 ? (idMap.LEFT[totalRounds - 1]?.[0] ?? null) : null;
+  const finalSrc2 = totalRounds > 1 ? (idMap.RIGHT[totalRounds - 1]?.[0] ?? null) : null;
   result.push({
     id: finalId,
     tournamentId,
@@ -162,6 +175,8 @@ export function generateSingleEliminationBracket(
     matchPosition: 0,
     side: "FINAL",
     nextMatchId: null,
+    sourceMatch1Id: finalSrc1,
+    sourceMatch2Id: finalSrc2,
     team1Id: finalTeam1?.id ?? null,
     team2Id: finalTeam2?.id ?? null,
     winnerId: null,

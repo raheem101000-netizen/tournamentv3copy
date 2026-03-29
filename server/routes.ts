@@ -2551,6 +2551,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Backfill sourceMatch1Id / sourceMatch2Id for all matches in a tournament.
+  // Safe to call multiple times — only writes to matches that still have both fields null.
+  app.post("/api/tournaments/:tournamentId/backfill-sources", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+      const { tournamentId } = req.params;
+      const allMatches = await storage.getMatchesByTournament(tournamentId);
+
+      // Build reverse map: matchId → matches that point to it via nextMatchId
+      const feedersMap = new Map<string, typeof allMatches>();
+      for (const m of allMatches) {
+        if (m.nextMatchId) {
+          const arr = feedersMap.get(m.nextMatchId) ?? [];
+          arr.push(m);
+          feedersMap.set(m.nextMatchId, arr);
+        }
+      }
+
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (const match of allMatches) {
+        const feeders = feedersMap.get(match.id) ?? [];
+
+        if (feeders.length === 0) { skipped++; continue; } // R1 or standalone match
+
+        if (feeders.length > 2) {
+          console.error(`[BACKFILL] match ${match.id} has ${feeders.length} feeders — skipping`);
+          errors++;
+          continue;
+        }
+
+        // Only write if both source fields are currently null
+        if ((match as any).sourceMatch1Id || (match as any).sourceMatch2Id) { skipped++; continue; }
+
+        const src1 = feeders[0]?.id ?? null;
+        const src2 = feeders[1]?.id ?? null;
+
+        await storage.updateMatch(match.id, {
+          sourceMatch1Id: src1,
+          sourceMatch2Id: src2,
+        } as any);
+        updated++;
+      }
+
+      res.json({ updated, skipped, errors });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create custom match endpoint
   app.post("/api/tournaments/:tournamentId/matches/custom", async (req, res) => {
     try {

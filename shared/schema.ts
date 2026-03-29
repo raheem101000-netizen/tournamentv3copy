@@ -61,6 +61,8 @@ export const matches = pgTable("matches", {
   matchIndex: integer("match_index"),
   side: text("side"),
   nextMatchId: varchar("next_match_id"),
+  sourceMatch1Id: varchar("source_match1_id"),
+  sourceMatch2Id: varchar("source_match2_id"),
   status: text("status", { enum: ["pending", "in_progress", "completed"] }).notNull().default("pending"),
   team1Score: integer("team1_score"),
   team2Score: integer("team2_score"),
