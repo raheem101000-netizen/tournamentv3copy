@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Trophy, Clock, CheckCircle2, MessageSquare } from "lucide-react";
+import { Trophy, Clock, CheckCircle2 } from "lucide-react";
 import MatchCard from "./MatchCard";
 import type { Match, Team } from "@shared/schema";
 
@@ -44,26 +44,26 @@ interface BracketScale {
 function getBracketScale(totalMatches: number): BracketScale {
   if (totalMatches <= 4) {
     // 2–4 team bracket: large, fully readable
-    return { slotH: 100, colW: 220, stubW: 14, cardHalfH: 42,
+    return { slotH: 110, colW: 280, stubW: 14, cardHalfH: 46,
       avatarCls: "w-7 h-7", nameCls: "text-xs", userCls: "text-[11px]",
-      fallbackCls: "text-[10px]", truncate: false, cardPad: "px-3 py-2" };
+      fallbackCls: "text-[10px]", truncate: false, cardPad: "px-4 py-2" };
   }
   if (totalMatches <= 10) {
     // ~8-team bracket (7 matches): medium-large
-    return { slotH: 90, colW: 190, stubW: 12, cardHalfH: 38,
+    return { slotH: 100, colW: 250, stubW: 12, cardHalfH: 42,
       avatarCls: "w-6 h-6", nameCls: "text-[11px]", userCls: "text-[10px]",
-      fallbackCls: "text-[9px]", truncate: false, cardPad: "px-2.5 py-1.5" };
+      fallbackCls: "text-[9px]", truncate: false, cardPad: "px-3 py-1.5" };
   }
   if (totalMatches <= 20) {
     // ~16-team bracket (15 matches): medium
-    return { slotH: 82, colW: 165, stubW: 10, cardHalfH: 34,
+    return { slotH: 90, colW: 210, stubW: 10, cardHalfH: 38,
       avatarCls: "w-5 h-5", nameCls: "text-[10px]", userCls: "text-[9px]",
-      fallbackCls: "text-[8px]", truncate: true, cardPad: "px-2 py-1.5" };
+      fallbackCls: "text-[8px]", truncate: true, cardPad: "px-3 py-1.5" };
   }
   // 32+ matches: compact
-  return { slotH: 72, colW: 140, stubW: 10, cardHalfH: 30,
+  return { slotH: 80, colW: 180, stubW: 10, cardHalfH: 34,
     avatarCls: "w-4 h-4", nameCls: "text-[9px]", userCls: "text-[8px]",
-    fallbackCls: "text-[7px]", truncate: true, cardPad: "px-1.5 py-1" };
+    fallbackCls: "text-[7px]", truncate: true, cardPad: "px-2.5 py-1" };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -175,9 +175,6 @@ function MatchBox({
         <span className="text-[9px] text-muted-foreground capitalize">
           {match.status.replace("_", " ")}
         </span>
-        {onClick && match.team1Id && match.team2Id && (
-          <MessageSquare className="w-2.5 h-2.5 text-muted-foreground/50 ml-auto" />
-        )}
       </div>
     </div>
   );
