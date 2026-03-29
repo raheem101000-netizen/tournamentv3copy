@@ -961,7 +961,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                                 });
                               });
                           }}
-                          disabled={!isPowerOf2}
+
                           data-testid="button-initialize-bracket"
                         >
                           <Trophy className="h-4 w-4 mr-2" />
@@ -1437,7 +1437,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                         )}
                         <Button
                           onClick={() => generateFixturesMutation.mutate()}
-                          disabled={generateFixturesMutation.isPending || !isPowerOf2}
+                          disabled={generateFixturesMutation.isPending}
                           data-testid="button-initialize-bracket"
                         >
                           {generateFixturesMutation.isPending ? "Initializing..." : "Initialize Bracket"}
