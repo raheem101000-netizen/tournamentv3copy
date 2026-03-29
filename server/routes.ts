@@ -2144,15 +2144,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
-    // RULE 4: Find the next slot exclusively via prevMatch backward pointers.
-    // getMatchByPrevMatchId queries: WHERE prev_match1_id = matchId OR prev_match2_id = matchId
+    // Find the next slot via prevMatch backward pointers.
     // Returns null only when matchId is the FINAL (nothing points to it).
     const nextMatch = await storage.getMatchByPrevMatchId(matchId);
     if (!nextMatch) return; // FINAL — bracket is complete
 
-    // RULE 5: Slot assignment is hardcoded from the bracket's wiring.
-    // No matchIndex % 2. No side guessing. No fallback.
-    // If neither field matches, the bracket data is corrupted — throw immediately.
+    // Slot assignment is hardcoded from the bracket's wiring.
     let slot: "team1Id" | "team2Id";
     if (nextMatch.prevMatch1Id === matchId) {
       slot = "team1Id";
@@ -2172,28 +2169,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const updated = await storage.getMatch(nextMatch.id);
     if (!updated) return;
 
-    // RULE 3: Both slots filled with real players — create match chat now
+    // Both slots filled — create match chat and stop
     if (updated.team1Id && updated.team2Id) {
-      if (!updated.isBye) {
-        await createMatchThreadsForAllMembers(
-          updated.id, updated.team1Id, updated.team2Id, updated.roundName ?? undefined
-        );
-      }
+      await createMatchThreadsForAllMembers(
+        updated.id, updated.team1Id, updated.team2Id, updated.roundName ?? undefined
+      );
       return;
     }
 
-    // RULE 6: One slot filled — check if opponent is coming via the other prev field
-    const otherPrevId = slot === "team1Id" ? nextMatch.prevMatch2Id : nextMatch.prevMatch1Id;
-
-    if (otherPrevId) {
-      const otherFeeder = await storage.getMatch(otherPrevId);
-      if (otherFeeder && otherFeeder.status !== "completed") return; // opponent coming — wait
-    }
-
-    // Other feeder is null (no opponent exists) or already completed (BYE cascade) —
-    // auto-advance this player as BYE and continue up the bracket
-    await storage.updateMatch(updated.id, { winnerId, status: "completed", isBye: 1 });
-    await progressWinner(updated.id, winnerId, tournamentId);
+    // One slot filled — opponent not yet determined, wait
   }
 
   // Helper: set winner and propagate bracket (reused by organizer endpoint and auto-resolve)
@@ -2732,6 +2716,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (existingBracketMatches.length > 0) {
           return res.status(409).json({
             error: "Bracket already generated. For knockout tournaments the bracket is managed automatically — match chats are created as each round's players are confirmed."
+          });
+        }
+
+        // Power-of-2 check: bracket requires exactly 2, 4, 8, 16, 32, or 64 participants
+        const count = activeTeams.length;
+        const isPowerOf2 = count >= 2 && (count & (count - 1)) === 0;
+        if (!isPowerOf2) {
+          const lower = Math.pow(2, Math.floor(Math.log2(count)));
+          const upper = lower * 2;
+          const toRemove = count - lower;
+          const toAdd = upper - count;
+          return res.status(400).json({
+            error: `You have ${count} participants. Brackets require a power of 2 (${lower} or ${upper}). Please remove ${toRemove} participant${toRemove !== 1 ? 's' : ''} or add ${toAdd} more.`
           });
         }
       }

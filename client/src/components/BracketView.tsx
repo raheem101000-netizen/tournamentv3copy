@@ -57,15 +57,6 @@ function MatchBox({
   const isCompleted = match.status === "completed";
   const isWinner = (id?: string | null) => !!match.winnerId && match.winnerId === id;
 
-  if (match.isBye) {
-    return (
-      <div className="select-none rounded-md border border-dashed border-border/50 bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
-        <span className="font-medium">{getDisplayName(team1, match.team1Id)}</span>
-        <span className="ml-1.5 text-[10px] opacity-60">BYE</span>
-      </div>
-    );
-  }
-
   const isTbd = !match.team1Id && !match.team2Id;
   if (isTbd) {
     return (
@@ -506,7 +497,7 @@ function LegacyBracket({
               <div className="px-3 pb-3 pt-1 border-b mb-0">
                 <h3 className="font-semibold text-sm">Round {round}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {roundMatches.filter((m) => !m.isBye).length} matches
+                  {roundMatches.length} matches
                 </p>
               </div>
               <div className="relative flex flex-col" style={{ paddingTop: 8 }}>

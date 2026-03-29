@@ -927,31 +927,47 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
                     No matches scheduled yet
                   </p>
                   {/* Knockout: one-time bracket initialisation */}
-                  {selectedTournament.format === 'single_elimination' && selectedTournamentTeams.length >= 2 && isOrganizer && (
-                    <Button
-                      onClick={() => {
-                        apiRequest('POST', `/api/tournaments/${selectedTournamentId}/generate-fixtures`)
-                          .then(() => {
-                            queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/matches`] });
-                            toast({
-                              title: "Bracket Initialized",
-                              description: "The knockout bracket has been created. Match chats will open automatically as each round is confirmed.",
-                            });
-                          })
-                          .catch((error) => {
-                            toast({
-                              title: "Error",
-                              description: error.message || "Failed to initialize bracket",
-                              variant: "destructive",
-                            });
-                          });
-                      }}
-                      data-testid="button-initialize-bracket"
-                    >
-                      <Trophy className="h-4 w-4 mr-2" />
-                      Initialize Bracket
-                    </Button>
-                  )}
+                  {selectedTournament.format === 'single_elimination' && selectedTournamentTeams.length >= 2 && isOrganizer && (() => {
+                    const teamCount = selectedTournamentTeams.length;
+                    const isPowerOf2 = teamCount >= 2 && (teamCount & (teamCount - 1)) === 0;
+                    const lower = teamCount >= 2 ? Math.pow(2, Math.floor(Math.log2(teamCount))) : 2;
+                    const upper = lower * 2;
+                    const toRemove = teamCount - lower;
+                    const toAdd = upper - teamCount;
+                    return (
+                      <div className="space-y-2">
+                        {!isPowerOf2 && (
+                          <p className="text-xs text-destructive">
+                            You have {teamCount} participants. Brackets require a power of 2 ({lower} or {upper}). Remove {toRemove} participant{toRemove !== 1 ? 's' : ''} or add {toAdd} more.
+                          </p>
+                        )}
+                        <Button
+                          onClick={() => {
+                            apiRequest('POST', `/api/tournaments/${selectedTournamentId}/generate-fixtures`)
+                              .then(() => {
+                                queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/matches`] });
+                                toast({
+                                  title: "Bracket Initialized",
+                                  description: "The knockout bracket has been created. Match chats will open automatically as each round is confirmed.",
+                                });
+                              })
+                              .catch((error) => {
+                                toast({
+                                  title: "Error",
+                                  description: error.message || "Failed to initialize bracket",
+                                  variant: "destructive",
+                                });
+                              });
+                          }}
+                          disabled={!isPowerOf2}
+                          data-testid="button-initialize-bracket"
+                        >
+                          <Trophy className="h-4 w-4 mr-2" />
+                          Initialize Bracket
+                        </Button>
+                      </div>
+                    );
+                  })()}
                   {/* Non-knockout: standard match generation */}
                   {selectedTournament.format !== 'single_elimination' && selectedTournamentTeams.length >= 2 && isOrganizer && (
                     <Button
@@ -1399,21 +1415,34 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             {isOrganizer ? (
               registrations.filter(r => r.status === 'approved').length > 0 ? (
                 <div className="space-y-4">
-                  {selectedTournament.format === 'single_elimination' && selectedTournamentMatches.filter((m: any) => m.matchType !== 'manual').length === 0 && (
-                    <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
-                      <h3 className="font-semibold text-sm">Knockout Bracket</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Generate the bracket once. Match chats will open automatically as each round's players are confirmed.
-                      </p>
-                      <Button
-                        onClick={() => generateFixturesMutation.mutate()}
-                        disabled={generateFixturesMutation.isPending || registrations.filter(r => r.status === 'approved').length < 2}
-                        data-testid="button-initialize-bracket"
-                      >
-                        {generateFixturesMutation.isPending ? "Initializing..." : "Initialize Bracket"}
-                      </Button>
-                    </div>
-                  )}
+                  {selectedTournament.format === 'single_elimination' && selectedTournamentMatches.filter((m: any) => m.matchType !== 'manual').length === 0 && (() => {
+                    const approvedCount = registrations.filter(r => r.status === 'approved').length;
+                    const isPowerOf2 = approvedCount >= 2 && (approvedCount & (approvedCount - 1)) === 0;
+                    const lower = approvedCount >= 2 ? Math.pow(2, Math.floor(Math.log2(approvedCount))) : 2;
+                    const upper = lower * 2;
+                    const toRemove = approvedCount - lower;
+                    const toAdd = upper - approvedCount;
+                    return (
+                      <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
+                        <h3 className="font-semibold text-sm">Knockout Bracket</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Generate the bracket once. Match chats will open automatically as each round's players are confirmed.
+                        </p>
+                        {approvedCount >= 2 && !isPowerOf2 && (
+                          <p className="text-xs text-destructive">
+                            You have {approvedCount} participants. Brackets require a power of 2 ({lower} or {upper}). Remove {toRemove} participant{toRemove !== 1 ? 's' : ''} or add {toAdd} more.
+                          </p>
+                        )}
+                        <Button
+                          onClick={() => generateFixturesMutation.mutate()}
+                          disabled={generateFixturesMutation.isPending || !isPowerOf2}
+                          data-testid="button-initialize-bracket"
+                        >
+                          {generateFixturesMutation.isPending ? "Initializing..." : "Initialize Bracket"}
+                        </Button>
+                      </div>
+                    );
+                  })()}
                   {selectedTournament.format !== 'single_elimination' && (
                     <div className="flex flex-col gap-4 p-4 border rounded-lg bg-card/50">
                       <h3 className="font-semibold text-sm">Match Generation</h3>
