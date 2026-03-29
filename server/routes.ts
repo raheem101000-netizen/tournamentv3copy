@@ -2144,6 +2144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   async function progressWinner(matchId: string, winnerId: string, tournamentId: string): Promise<void> {
+    console.log("[DEBUG4] progressWinner running");
     console.log("[PROGRESS] START matchId=", matchId, "winnerId=", winnerId, "tournamentId=", tournamentId);
     console.log(`[PROGRESS] called matchId=${matchId} winnerId=${winnerId}`);
 
@@ -2340,6 +2341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`[WINNER] matchId=${match.id} side=${match.side} matchIndex=${match.matchIndex} nextMatchId=${match.nextMatchId} winnerId=${winnerId}`);
+      console.log("[DEBUG1] about to fetch tournament");
 
       // Permission check: organizer, server owner, or Tournament Manager
       if (match.tournamentId) {
@@ -2411,8 +2413,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Propagate winner to next round in single elimination
       console.log("[DEBUG] match.tournamentId=", match.tournamentId);
       const winnerTournament = await storage.getTournament(match.tournamentId);
-      console.log("[DEBUG] tournament found=", !!winnerTournament, "format=", winnerTournament?.format);
+      console.log("[DEBUG2] tournament=", winnerTournament?.id, "format=", winnerTournament?.format);
       if (winnerTournament && winnerTournament.format === "single_elimination") {
+        console.log("[DEBUG3] calling progressWinner");
         try {
           await progressWinner(match.id, winnerId, winnerTournament.id);
         } catch (err) {
