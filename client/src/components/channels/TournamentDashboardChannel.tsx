@@ -514,6 +514,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/registrations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/teams`] });
       toast({ title: "Registration Removed" });
     },
     onError: (error: Error) => {
@@ -527,6 +528,7 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/registrations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tournaments/${selectedTournamentId}/teams`] });
       toast({ title: "Registration Restored" });
     },
     onError: (error: Error) => {
