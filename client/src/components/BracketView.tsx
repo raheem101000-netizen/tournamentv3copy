@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useLayoutEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -7,35 +7,113 @@ import MatchCard from "./MatchCard";
 import type { Match, Team } from "@shared/schema";
 
 /**
- * Scales a bracket container to fit its parent width without scrolling.
- * Uses CSS zoom (affects layout) rather than transform:scale (doesn't affect layout).
+ * Renders children in a fixed-height container with pinch-to-zoom and drag-to-pan.
+ * Initial scale is computed on mount to fit the full content in the container.
+ * Match cards remain tappable because clicks are not suppressed.
  */
-function useFitScale(deps: any[]) {
-  const outerRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+function PanZoomBracket({ children }: { children: React.ReactNode }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // scale=0 hides content before initial fit is computed (prevents layout flash)
+  const [tf, setTf] = useState({ tx: 0, ty: 0, scale: 0 });
+  const tfRef = useRef(tf);
+  tfRef.current = tf;
+
+  // After first render: measure content and compute scale-to-fit
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    const nw = content.scrollWidth;
+    const nh = content.scrollHeight;
+    if (nw === 0 || nh === 0) return;
+    const s = Math.min(cw / nw, ch / nh, 1);
+    setTf({ tx: (cw - nw * s) / 2, ty: Math.max(0, (ch - nh * s) / 2), scale: s });
+  }, []);
+
+  const lastPtr = useRef<{ x: number; y: number; dist: number | null } | null>(null);
 
   useEffect(() => {
-    function compute() {
-      const outer = outerRef.current;
-      const inner = innerRef.current;
-      if (!outer || !inner) return;
-      // Reset zoom to 1 to measure natural (unzoomed) dimensions
-      inner.style.zoom = "1";
-      const nw = inner.scrollWidth;
-      inner.style.zoom = ""; // remove override; React's style prop re-applies on next render
-      const aw = outer.clientWidth;
-      const s = nw > 0 && aw > 0 ? Math.min(1, aw / nw) : 1;
-      setScale(s);
-    }
-    compute();
-    const ro = new ResizeObserver(compute);
-    if (outerRef.current) ro.observe(outerRef.current);
-    return () => ro.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+    const el = containerRef.current;
+    if (!el) return;
 
-  return { outerRef, innerRef, scale };
+    function info(e: TouchEvent) {
+      if (e.touches.length === 1)
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY, dist: null as number | null };
+      const x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      return { x, y, dist };
+    }
+
+    function onStart(e: TouchEvent) { lastPtr.current = info(e); }
+
+    function onMove(e: TouchEvent) {
+      e.preventDefault();
+      const cur = info(e);
+      const last = lastPtr.current;
+      if (!last) { lastPtr.current = cur; return; }
+      const { tx, ty, scale } = tfRef.current;
+      const rect = el.getBoundingClientRect();
+      const dx = cur.x - last.x;
+      const dy = cur.y - last.y;
+      let newScale = scale;
+      let newTx = tx + dx;
+      let newTy = ty + dy;
+      if (cur.dist !== null && last.dist !== null && last.dist > 0) {
+        const ratio = cur.dist / last.dist;
+        newScale = Math.max(0.1, Math.min(4, scale * ratio));
+        const lx = cur.x - rect.left;
+        const ly = cur.y - rect.top;
+        newTx = lx - (lx - tx) * (newScale / scale);
+        newTy = ly - (ly - ty) * (newScale / scale);
+      }
+      setTf({ tx: newTx, ty: newTy, scale: newScale });
+      lastPtr.current = cur;
+    }
+
+    function onEnd(e: TouchEvent) {
+      lastPtr.current = e.touches.length ? info(e) : null;
+    }
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative overflow-hidden touch-none"
+      style={{ height: "65vh", minHeight: 320 }}
+    >
+      <div
+        ref={contentRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          transform: `translate(${tf.tx}px,${tf.ty}px) scale(${tf.scale})`,
+          transformOrigin: "0 0",
+          willChange: "transform",
+          // hide until initial fit is computed
+          opacity: tf.scale === 0 ? 0 : 1,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -390,7 +468,6 @@ function SingleEliminationBracket({
   onMatchClick?: (id: string) => void;
 }) {
   const scale = getBracketScale(matches.length);
-  const { outerRef, innerRef, scale: fitScale } = useFitScale([matches.length]);
 
   if (matches.length === 0) return null;
 
@@ -402,13 +479,7 @@ function SingleEliminationBracket({
 
   if (!hasSides) {
     // Legacy bracket: render old single-column layout
-    return (
-      <div ref={outerRef} className="w-full overflow-x-hidden">
-        <div ref={innerRef} className="w-fit" style={{ zoom: fitScale < 1 ? fitScale : undefined }}>
-          <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} scale={scale} />
-        </div>
-      </div>
-    );
+    return <LegacyBracket matches={matches} teams={teams} onMatchClick={onMatchClick} scale={scale} />;
   }
 
   const finalMatch = matches.find((m) => m.side === "FINAL");
@@ -502,7 +573,7 @@ function SingleEliminationBracket({
   // 2-team bracket: just show the FINAL
   if (isFinalOnly) {
     return (
-      <div className="w-full flex justify-center py-4 overflow-x-hidden">
+      <div className="w-full flex justify-center py-4">
         <div style={{ width: scale.colW }}>
           <p className="text-xs font-semibold text-amber-500 text-center mb-2">Grand Final</p>
           {finalMatch ? (
@@ -521,132 +592,74 @@ function SingleEliminationBracket({
     );
   }
 
+  // Shared butterfly bracket content (used by both mobile and desktop)
+  const bracketInner = (
+    <div className="w-fit pb-2">
+      {/* Round name headers */}
+      <div className="flex mb-1 min-w-max">
+        {leftRounds.map((r) => (
+          <div key={`lh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1">
+            <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
+          </div>
+        ))}
+        <div style={{ width: scale.colW + scale.stubW * 2 }} className="px-2 pb-1 text-center">
+          <p className="text-xs font-semibold text-amber-500">Grand Final</p>
+        </div>
+        {rightRoundsDisplay.map((r) => (
+          <div key={`rh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1 text-right">
+            <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
+          </div>
+        ))}
+      </div>
+      {/* Bracket body */}
+      <div className="flex min-w-max items-start">
+        {leftRounds.map((r) => (
+          <RoundColumn
+            key={`left-${r}`}
+            roundMatches={roundMatchesForVisual("LEFT", r)}
+            r1MatchCount={r1MatchCountLeft}
+            round={r}
+            connectorSide="right"
+            showConnector={true}
+            getTeam={getTeam}
+            onMatchClick={onMatchClick}
+            scale={scale}
+          />
+        ))}
+        <FinalColumn
+          match={finalMatch}
+          totalH={totalH}
+          getTeam={getTeam}
+          onMatchClick={onMatchClick}
+          scale={scale}
+        />
+        {rightRoundsDisplay.map((r) => (
+          <RoundColumn
+            key={`right-${r}`}
+            roundMatches={roundMatchesForVisual("RIGHT", r)}
+            r1MatchCount={r1MatchCountRight}
+            round={r}
+            connectorSide="left"
+            showConnector={true}
+            getTeam={getTeam}
+            onMatchClick={onMatchClick}
+            scale={scale}
+          />
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      {/* ── Mobile: single-column vertical layout (< 768px) ── */}
-      <div className="md:hidden space-y-4 pb-6 overflow-x-hidden">
-        {leftRounds.map((r) => {
-          const ms = roundMatchesForVisual("LEFT", r);
-          if (ms.length === 0) return null;
-          return (
-            <div key={`ml-${r}`}>
-              <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">{roundLabel(r)} – Left</p>
-              <div className="space-y-2">
-                {ms.map((m) => (
-                  <MatchBox
-                    key={m.id}
-                    match={m}
-                    team1={getTeam(m.team1Id)}
-                    team2={getTeam(m.team2Id)}
-                    onClick={onMatchClick && m.team1Id && m.team2Id ? () => onMatchClick!(m.id) : undefined}
-                    scale={scale}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Grand Final */}
-        <div>
-          <p className="text-xs font-semibold text-amber-500 mb-2 px-1">Grand Final</p>
-          {finalMatch ? (
-            <MatchBox
-              match={finalMatch}
-              team1={getTeam(finalMatch.team1Id)}
-              team2={getTeam(finalMatch.team2Id)}
-              onClick={onMatchClick && finalMatch.team1Id && finalMatch.team2Id ? () => onMatchClick!(finalMatch.id) : undefined}
-              scale={scale}
-            />
-          ) : (
-            <div className="rounded-lg border border-dashed border-border/30 bg-muted/10 px-3 py-2 text-xs text-muted-foreground/40 text-center">TBD</div>
-          )}
-        </div>
-
-        {rightRoundsDisplay.map((r) => {
-          const ms = roundMatchesForVisual("RIGHT", r);
-          if (ms.length === 0) return null;
-          return (
-            <div key={`mr-${r}`}>
-              <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">{roundLabel(r)} – Right</p>
-              <div className="space-y-2">
-                {ms.map((m) => (
-                  <MatchBox
-                    key={m.id}
-                    match={m}
-                    team1={getTeam(m.team1Id)}
-                    team2={getTeam(m.team2Id)}
-                    onClick={onMatchClick && m.team1Id && m.team2Id ? () => onMatchClick!(m.id) : undefined}
-                    scale={scale}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      {/* ── Mobile: full butterfly bracket, pannable + pinch-to-zoom (< 768px) ── */}
+      <div className="md:hidden">
+        <PanZoomBracket>{bracketInner}</PanZoomBracket>
       </div>
 
-      {/* ── Desktop: butterfly bracket with zoom-to-fit (≥ 768px) ── */}
-      <div ref={outerRef} className="hidden md:block w-full overflow-x-hidden pb-2">
-        <div
-          ref={innerRef}
-          className="w-fit mx-auto"
-          style={{ zoom: fitScale < 1 ? fitScale : undefined }}
-        >
-          {/* Round name headers */}
-          <div className="flex mb-1 min-w-max">
-            {leftRounds.map((r) => (
-              <div key={`lh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1">
-                <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
-              </div>
-            ))}
-            <div style={{ width: scale.colW + scale.stubW * 2 }} className="px-2 pb-1 text-center">
-              <p className="text-xs font-semibold text-amber-500">Grand Final</p>
-            </div>
-            {rightRoundsDisplay.map((r) => (
-              <div key={`rh-${r}`} style={{ width: scale.colW + scale.stubW }} className="px-2 pb-1 text-right">
-                <p className="text-xs font-semibold text-muted-foreground truncate">{roundLabel(r)}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Bracket body */}
-          <div className="flex min-w-max items-start">
-            {leftRounds.map((r) => (
-              <RoundColumn
-                key={`left-${r}`}
-                roundMatches={roundMatchesForVisual("LEFT", r)}
-                r1MatchCount={r1MatchCountLeft}
-                round={r}
-                connectorSide="right"
-                showConnector={true}
-                getTeam={getTeam}
-                onMatchClick={onMatchClick}
-                scale={scale}
-              />
-            ))}
-            <FinalColumn
-              match={finalMatch}
-              totalH={totalH}
-              getTeam={getTeam}
-              onMatchClick={onMatchClick}
-              scale={scale}
-            />
-            {rightRoundsDisplay.map((r) => (
-              <RoundColumn
-                key={`right-${r}`}
-                roundMatches={roundMatchesForVisual("RIGHT", r)}
-                r1MatchCount={r1MatchCountRight}
-                round={r}
-                connectorSide="left"
-                showConnector={true}
-                getTeam={getTeam}
-                onMatchClick={onMatchClick}
-                scale={scale}
-              />
-            ))}
-          </div>
-        </div>
+      {/* ── Desktop: horizontally scrollable butterfly bracket (≥ 768px) ── */}
+      <div className="hidden md:block w-full overflow-x-auto pb-2">
+        {bracketInner}
       </div>
     </>
   );
