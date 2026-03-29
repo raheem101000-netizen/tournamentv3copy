@@ -811,7 +811,9 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             {selectedTournament.format !== 'league' && selectedTournament.format !== 'round_robin' && (
               <TabsTrigger value="bracket" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Bracket</TabsTrigger>
             )}
-            <TabsTrigger value="standings" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Standings</TabsTrigger>
+            {selectedTournament.format !== 'single_elimination' && (
+              <TabsTrigger value="standings" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Standings</TabsTrigger>
+            )}
             {/* Match Chat is ALWAYS visible to all server members.
                 Participants need to see this tab to access their own match.
                 visibleMatchChatList (below) controls what matches each user sees.
@@ -819,7 +821,9 @@ export default function TournamentDashboardChannel({ serverId, canManage = false
             <TabsTrigger value="match-chat" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Match Chat</TabsTrigger>
             {isOrganizer && (
               <>
-                <TabsTrigger value="participants" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Create Match</TabsTrigger>
+                {selectedTournament.format !== 'single_elimination' && (
+                  <TabsTrigger value="participants" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Create Match</TabsTrigger>
+                )}
                 <TabsTrigger value="registrations" className="whitespace-nowrap rounded-md border border-border px-3 py-2">Registrations</TabsTrigger>
               </>
             )}
